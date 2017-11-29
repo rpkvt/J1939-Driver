@@ -243,6 +243,8 @@ struct j1939_sk_buff_cb {
 //Check if we want to disable the normal BAM 50 ms delay
 static inline int j1939cb_use_bamdelay(const struct j1939_sk_buff_cb *skcb)
 {
+	printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
+	printk(KERN_ALERT "DEBUG: skcb->tpflags state: %d\n",skcb->tpflags);
 	return !(skcb->tpflags & BAM_NODELAY);
 }
 

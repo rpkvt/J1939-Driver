@@ -977,6 +977,9 @@ static int j1939tp_txnext(struct session *session)
 		/* must lock? */
 		if (tp_cmd_bam == dat[0] && j1939cb_use_bamdelay(session->cb))
 		{
+			printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
+			printk(KERN_ALERT "DEBUG: Calling j1939tp_schedule_txtimer\n");
+
 			j1939tp_schedule_txtimer(session, 50);
 		}
 		j1939tp_set_rxtimeout(session, 1250);
@@ -1089,7 +1092,11 @@ static int j1939tp_txnext(struct session *session)
 			++pkt_done;
 			++session->pkt.tx;
 
+
 			pdelay = j1939cb_is_broadcast(session->cb) ? (j1939cb_use_bamdelay(session->cb)? 50 :  packet_delay): packet_delay;
+
+			printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
+			printk(KERN_ALERT "DEBUG: pdelay: %d\n",pdelay);
 
 			if ((session->pkt.tx < session->pkt.total) && pdelay) {
 				j1939tp_schedule_txtimer(session, pdelay);
