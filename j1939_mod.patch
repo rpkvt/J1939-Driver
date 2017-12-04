@@ -1,16 +1,3 @@
-From 3430b47815ef29af0ae474216e2b6de6b1f8fb59 Mon Sep 17 00:00:00 2001
-From: Rich Ketcham <rich.ketcham@gmail.com>
-Date: Mon, 4 Dec 2017 12:46:53 -0500
-Subject: [PATCH] Adding changes to j1939 driver
-
----
- include/uapi/linux/can/j1939.h |  1 +
- net/can/j1939/j1939-priv.h     | 14 ++++++++++++++
- net/can/j1939/main.c           |  2 ++
- net/can/j1939/socket.c         | 16 ++++++++++++++++
- net/can/j1939/transport.c      | 38 +++++++++++++++++++++++++++++++++++---
- 5 files changed, 68 insertions(+), 3 deletions(-)
-
 diff --git a/include/uapi/linux/can/j1939.h b/include/uapi/linux/can/j1939.h
 index 4d0d23e..6c974ba 100644
 --- a/include/uapi/linux/can/j1939.h
@@ -24,7 +11,7 @@ index 4d0d23e..6c974ba 100644
  
  enum {
 diff --git a/net/can/j1939/j1939-priv.h b/net/can/j1939/j1939-priv.h
-index 5ef7b37..098a51d 100644
+index 5ef7b37..8a01ad4 100644
 --- a/net/can/j1939/j1939-priv.h
 +++ b/net/can/j1939/j1939-priv.h
 @@ -222,6 +222,11 @@ struct j1939_sk_buff_cb {
@@ -39,16 +26,24 @@ index 5ef7b37..098a51d 100644
  	/* for tx, MSG_SYN will be used to sync on sockets */
  	int msg_flags;
  
-@@ -235,6 +240,15 @@ struct j1939_sk_buff_cb {
+@@ -235,6 +240,23 @@ struct j1939_sk_buff_cb {
  #define J1939_MSG_RESERVED MSG_SYN
  #define J1939_MSG_SYNC MSG_SYN
  
 +//Check if we want to disable the normal BAM 50 ms delay
++//Return 0 if we want to disable the delay
++//Return 1 if we want to keep the delay
 +static inline int j1939cb_use_bamdelay(const struct j1939_sk_buff_cb *skcb)
 +{
 +	printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 +	printk(KERN_ALERT "DEBUG: skcb->tpflags state: %d\n",skcb->tpflags);
-+	return !(skcb->tpflags & BAM_NODELAY);
++
++	if(skcb->tpflags & BAM_NODELAY)
++	{
++		return 0;
++	}
++
++	return 1;
 +}
 +
 +
@@ -119,7 +114,7 @@ index 41d59dd..c91be05 100644
  		struct sockaddr_can *addr = msg->msg_name;
  
 diff --git a/net/can/j1939/transport.c b/net/can/j1939/transport.c
-index 5f23fcf..5f980fd 100644
+index 5f23fcf..c8b525a 100644
 --- a/net/can/j1939/transport.c
 +++ b/net/can/j1939/transport.c
 @@ -976,7 +976,25 @@ static int j1939tp_txnext(struct session *session)
@@ -131,7 +126,7 @@ index 5f23fcf..5f980fd 100644
 +			printk(KERN_ALRT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 +			printk(KERN_ALERT "DEBUG: Calling j1939tp_schedule_txtimer\n");
 +			//Use  50 ms delay
-+			if(j1939cb_use_bamdelay(session->cb)
++			if(j1939cb_use_bamdelay(session->cb))
 +			{
 +				printk(KERN_ALERT "DEBUG: Using 50 ms delay\n");
 +
@@ -149,7 +144,7 @@ index 5f23fcf..5f980fd 100644
  		j1939tp_set_rxtimeout(session, 1250);
  		break;
  	case tp_cmd_rts:
-@@ -1086,8 +1104,22 @@ static int j1939tp_txnext(struct session *session)
+@@ -1086,8 +1104,23 @@ static int j1939tp_txnext(struct session *session)
  			session->last_txcmd = 0xff;
  			++pkt_done;
  			++session->pkt.tx;
@@ -165,7 +160,8 @@ index 5f23fcf..5f980fd 100644
 +			}
 +			else
 +			{
-+				pdelay = packet_delay;
++				//pdelay = packet_delay;
++				pdelay = 1;
 +			}
 +
 +			printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
@@ -174,6 +170,3 @@ index 5f23fcf..5f980fd 100644
  			if ((session->pkt.tx < session->pkt.total) && pdelay) {
  				j1939tp_schedule_txtimer(session, pdelay);
  				break;
--- 
-1.9.1
-
