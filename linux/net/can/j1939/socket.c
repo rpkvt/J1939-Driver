@@ -541,9 +541,11 @@ static int j1939sk_setsockopt(struct socket *sock, int level, int optname,
 		return 0;
 	case SO_J1939_BAM_DELAY_DISABLE:
 		//Enables/Disables delay
+		tmp = j1939sk_setsockopt_flag(jsk, optval, optlen, JSK_BAM_DELAY);
 		printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
-		printk(KERN_ALERT "DEBUG: SO_J1939_BAM_DELAY_DISABLE used with value: %d\n",optval);
-		return j1939sk_setsockopt_flag(jsk, optval, optlen, JSK_BAM_DELAY);
+		printk(KERN_ALERT "DEBUG: SO_J1939_BAM_DELAY_DISABLE used with value: %d\n",tmp);
+		printk(KERN_ALERT "DEBUG: jsk->state: %d\n",(int)(jsk->state));
+		return tmp;
 	default:
 		return -ENOPROTOOPT;
 	}

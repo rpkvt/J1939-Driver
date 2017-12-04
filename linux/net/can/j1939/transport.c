@@ -975,12 +975,25 @@ static int j1939tp_txnext(struct session *session)
 			goto failed;
 		session->last_txcmd = dat[0];
 		/* must lock? */
-		if (tp_cmd_bam == dat[0] && j1939cb_use_bamdelay(session->cb))
+		if (tp_cmd_bam == dat[0])
 		{
-			printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
+			printk(KERN_ALRT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 			printk(KERN_ALERT "DEBUG: Calling j1939tp_schedule_txtimer\n");
+			//Use  50 ms delay
+			if(j1939cb_use_bamdelay(session->cb)
+			{
+				printk(KERN_ALERT "DEBUG: Using 50 ms delay\n");
 
-			j1939tp_schedule_txtimer(session, 50);
+				j1939tp_schedule_txtimer(session, 50);
+			}
+			//Don't use bam delay
+			else
+			{
+				printk(KERN_ALERT "DEBUG: Using 1 ms delay\n");
+
+				//Use 1 ms delay instead
+				j1939tp_schedule_txtimer(session, 1);
+			}
 		}
 		j1939tp_set_rxtimeout(session, 1250);
 		break;
@@ -1092,8 +1105,17 @@ static int j1939tp_txnext(struct session *session)
 			++pkt_done;
 			++session->pkt.tx;
 
+			//Old
+			//pdelay = j1939cb_is_broadcast(session->cb) ?  50 : packet_delay;
 
-			pdelay = j1939cb_is_broadcast(session->cb) ? (j1939cb_use_bamdelay(session->cb)? 50 :  packet_delay): packet_delay;
+			if(j1939cb_is_broadcast(session->cb) && j1939cb_use_bamdelay(session->cb))
+			{
+				pdelay = 50;
+			}
+			else
+			{
+				pdelay = packet_delay;
+			}
 
 			printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 			printk(KERN_ALERT "DEBUG: pdelay: %d\n",pdelay);
