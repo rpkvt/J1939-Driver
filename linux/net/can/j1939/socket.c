@@ -542,9 +542,9 @@ static int j1939sk_setsockopt(struct socket *sock, int level, int optname,
 	case SO_J1939_BAM_DELAY_DISABLE:
 		//Enables/Disables delay
 		tmp = j1939sk_setsockopt_flag(jsk, optval, optlen, JSK_BAM_DELAY);
-		printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
-		printk(KERN_ALERT "DEBUG: SO_J1939_BAM_DELAY_DISABLE used with value: %d\n",tmp);
-		printk(KERN_ALERT "DEBUG: jsk->state: %d\n",(int)(jsk->state));
+		printk(<1> "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
+		printk(<1> "DEBUG: SO_J1939_BAM_DELAY_DISABLE used with value: %d\n",tmp);
+		printk(<1> "DEBUG: jsk->state: %d\n",(int)(jsk->state));
 		return tmp;
 	default:
 		return -ENOPROTOOPT;
@@ -728,8 +728,8 @@ static int j1939sk_sendmsg(struct socket *sock, struct msghdr *msg, size_t size)
 
 	//Check if delay has been disabled
 	skcb->tpflags = (jsk->state & JSK_BAM_DELAY);
-	printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
-	printk(KERN_ALERT "DEBUG: skcb->tpflags state: %d\n",skcb->tpflags);
+	printk(<1> "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
+	printk(<1> "DEBUG: skcb->tpflags state: %d\n",skcb->tpflags);
 
 	if (msg->msg_name) {
 		struct sockaddr_can *addr = msg->msg_name;

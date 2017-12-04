@@ -977,8 +977,8 @@ static int j1939tp_txnext(struct session *session)
 		/* must lock? */
 		if (tp_cmd_bam == dat[0])
 		{
-			printk(KERN_ALRT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
-			printk(KERN_ALERT "DEBUG: Calling j1939tp_schedule_txtimer\n");
+			printk(<1> "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
+			printk(<1> "DEBUG: Calling j1939tp_schedule_txtimer\n");
 			//Use  50 ms delay
 			if(j1939cb_use_bamdelay(session->cb))
 			{
@@ -1118,8 +1118,8 @@ static int j1939tp_txnext(struct session *session)
 				pdelay = 1;
 			}
 
-			printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
-			printk(KERN_ALERT "DEBUG: pdelay: %d\n",pdelay);
+			printk(<1> "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
+			printk(<1> "DEBUG: pdelay: %d\n",pdelay);
 
 			if ((session->pkt.tx < session->pkt.total) && pdelay) {
 				j1939tp_schedule_txtimer(session, pdelay);

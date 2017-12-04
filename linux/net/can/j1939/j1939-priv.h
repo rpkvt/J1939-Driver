@@ -16,7 +16,6 @@
 #include <net/sock.h>
 
 #include <linux/proc_fs.h>
-#include <linux/kernal.h>  //KERN ALERT
 #include <linux/module.h>
 #include <linux/can/j1939.h>
 #include <linux/atomic.h>
