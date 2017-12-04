@@ -980,7 +980,7 @@ static int j1939tp_txnext(struct session *session)
 			printk(KERN_ALRT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 			printk(KERN_ALERT "DEBUG: Calling j1939tp_schedule_txtimer\n");
 			//Use  50 ms delay
-			if(j1939cb_use_bamdelay(session->cb)
+			if(j1939cb_use_bamdelay(session->cb))
 			{
 				printk(KERN_ALERT "DEBUG: Using 50 ms delay\n");
 
@@ -1114,7 +1114,8 @@ static int j1939tp_txnext(struct session *session)
 			}
 			else
 			{
-				pdelay = packet_delay;
+				//pdelay = packet_delay;
+				pdelay = 1;
 			}
 
 			printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
