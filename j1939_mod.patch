@@ -11,10 +11,18 @@ index 4d0d23e..6c974ba 100644
  
  enum {
 diff --git a/net/can/j1939/j1939-priv.h b/net/can/j1939/j1939-priv.h
-index 5ef7b37..8a01ad4 100644
+index 5ef7b37..6339941 100644
 --- a/net/can/j1939/j1939-priv.h
 +++ b/net/can/j1939/j1939-priv.h
-@@ -222,6 +222,11 @@ struct j1939_sk_buff_cb {
+@@ -16,6 +16,7 @@
+ #include <net/sock.h>
+ 
+ #include <linux/proc_fs.h>
++#include <linux/kernal.h>  //KERN ALERT
+ #include <linux/module.h>
+ #include <linux/can/j1939.h>
+ #include <linux/atomic.h>
+@@ -222,6 +223,11 @@ struct j1939_sk_buff_cb {
  
  #define ECU_LOCAL 1
  
@@ -26,7 +34,7 @@ index 5ef7b37..8a01ad4 100644
  	/* for tx, MSG_SYN will be used to sync on sockets */
  	int msg_flags;
  
-@@ -235,6 +240,23 @@ struct j1939_sk_buff_cb {
+@@ -235,6 +241,23 @@ struct j1939_sk_buff_cb {
  #define J1939_MSG_RESERVED MSG_SYN
  #define J1939_MSG_SYNC MSG_SYN
  
