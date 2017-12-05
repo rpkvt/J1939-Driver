@@ -114,7 +114,7 @@ index 41d59dd..f2dbc4e 100644
  		struct sockaddr_can *addr = msg->msg_name;
  
 diff --git a/net/can/j1939/transport.c b/net/can/j1939/transport.c
-index 5f23fcf..fd25ded 100644
+index 5f23fcf..ff87021 100644
 --- a/net/can/j1939/transport.c
 +++ b/net/can/j1939/transport.c
 @@ -976,7 +976,25 @@ static int j1939tp_txnext(struct session *session)
@@ -144,15 +144,12 @@ index 5f23fcf..fd25ded 100644
  		j1939tp_set_rxtimeout(session, 1250);
  		break;
  	case tp_cmd_rts:
-@@ -1086,8 +1104,23 @@ static int j1939tp_txnext(struct session *session)
+@@ -1086,8 +1104,19 @@ static int j1939tp_txnext(struct session *session)
  			session->last_txcmd = 0xff;
  			++pkt_done;
  			++session->pkt.tx;
 -			pdelay = j1939cb_is_broadcast(session->cb) ?  50 :
 -				packet_delay;
-+
-+			//Old
-+			//pdelay = j1939cb_is_broadcast(session->cb) ?  50 : packet_delay;
 +
 +			if(j1939cb_is_broadcast(session->cb) && j1939cb_use_bamdelay(session->cb))
 +			{
@@ -161,11 +158,10 @@ index 5f23fcf..fd25ded 100644
 +			else
 +			{
 +				pdelay = packet_delay;
-+				//pdelay = 1;
 +			}
 +
-+			printk("DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
-+			printk("DEBUG: pdelay: %d\n",pdelay);
++			//printk("DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
++			//printk("DEBUG: pdelay: %d\n",pdelay);
 +
  			if ((session->pkt.tx < session->pkt.total) && pdelay) {
  				j1939tp_schedule_txtimer(session, pdelay);
