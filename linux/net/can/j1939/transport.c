@@ -1105,9 +1105,6 @@ static int j1939tp_txnext(struct session *session)
 			++pkt_done;
 			++session->pkt.tx;
 
-			//Old
-			//pdelay = j1939cb_is_broadcast(session->cb) ?  50 : packet_delay;
-
 			if(j1939cb_is_broadcast(session->cb) && j1939cb_use_bamdelay(session->cb))
 			{
 				pdelay = 50;
@@ -1115,11 +1112,10 @@ static int j1939tp_txnext(struct session *session)
 			else
 			{
 				pdelay = packet_delay;
-				//pdelay = 1;
 			}
 
-			printk("DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
-			printk("DEBUG: pdelay: %d\n",pdelay);
+			//printk("DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
+			//printk("DEBUG: pdelay: %d\n",pdelay);
 
 			if ((session->pkt.tx < session->pkt.total) && pdelay) {
 				j1939tp_schedule_txtimer(session, pdelay);
