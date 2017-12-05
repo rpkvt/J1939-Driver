@@ -66,7 +66,7 @@ index 3f4b018..8a02edb 100644
  	/* apply sanity checks */
  	skcb->pgn &= (pgn_is_pdu1(skcb->pgn)) ? 0x3ff00 : 0x3ffff;
 diff --git a/net/can/j1939/socket.c b/net/can/j1939/socket.c
-index 41d59dd..24af4af 100644
+index 41d59dd..1215399 100644
 --- a/net/can/j1939/socket.c
 +++ b/net/can/j1939/socket.c
 @@ -39,6 +39,7 @@ struct j1939_sock {
@@ -106,7 +106,7 @@ index 41d59dd..24af4af 100644
  	skcb->dstaddr = jsk->addr.da;
  
 +	//Check if delay has been disabled
-+	skcb->tpflags = (jsk->state & JSK_BAM_DELAY);
++	skcb->tpflags = (jsk->state & JSK_BAM_DELAY)?BAM_NODELAY:0;
 +	printk("DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 +	printk("DEBUG: skcb->tpflags state: %d\n",skcb->tpflags);
 +
