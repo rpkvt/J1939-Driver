@@ -8,4 +8,3 @@ can-j1939-objs := \
 	main.o \
 	socket.o \
 	transport.o
-
