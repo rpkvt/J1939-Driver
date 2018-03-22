@@ -205,9 +205,12 @@ struct j1939_sk_buff_cb {
 	int dst_flags;
 
 #define ECU_LOCAL 1
-	/*  Flags for modifying the transport protocol*/ 
+
+	/*  Flags for modifying the transport protocol*/
 	int tpflags;
+
 #define BAM_NODELAY 1
+
 	/* for tx, MSG_SYN will be used to sync on sockets */
 	int msg_flags;
 
@@ -224,7 +227,6 @@ static inline struct j1939_sk_buff_cb *j1939_get_cb(struct sk_buff *skb)
 
 	return (struct j1939_sk_buff_cb *)skb->cb;
 }
-
 
 //Check if we want to disable the normal BAM 50 ms delay
 //Return 0 if we want to disable the delay

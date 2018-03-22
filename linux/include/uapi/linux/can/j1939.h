@@ -8,6 +8,7 @@
  * published by the Free Software Foundation.
  */
 
+
 #ifndef _UAPI_CAN_J1939_H_
 #define _UAPI_CAN_J1939_H_
 

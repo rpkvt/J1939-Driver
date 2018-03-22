@@ -42,6 +42,7 @@ struct j1939_sock {
 #define J1939_SOCK_RECV_OWN BIT(3)
 #define J1939_SOCK_BAM_DELAY BIT(4)
 
+
 	struct j1939_addr addr;
 	struct j1939_filter *filters;
 	int nfilters;
@@ -523,7 +524,7 @@ static int j1939sk_getsockopt(struct socket *sock, int level, int optname,
 		tmp = j1939_prio(jsk->sk.sk_priority);
 		break;
 	case SO_J1939_BAM_DELAY_DISABLE:
-		tmp = (jsk->state &  J1939_SOCK_BAM_DELAY) ? 1 : 0;
+		tmp = (jsk->state & J1939_SOCK_BAM_DELAY) ? 1 : 0;
 		break;
 	default:
 		ret = -ENOPROTOOPT;
@@ -666,7 +667,6 @@ static int j1939sk_sendmsg(struct socket *sock, struct msghdr *msg, size_t size)
 	skcb->priority = j1939_prio(sk->sk_priority);
 	skcb->msg_flags = msg->msg_flags;
 
-	
 	//Check if delay has been disabled
 	skcb->tpflags = (jsk->state & J1939_SOCK_BAM_DELAY)?BAM_NODELAY:0;
 	//printk("DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
