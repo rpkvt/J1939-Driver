@@ -22,10 +22,7 @@
 #include "j1939-priv.h"
 
 #define ecu_dbg(ecu, fmt, ...) \
-	pr_debug("j1939-%i,%016llx,%02x: " fmt, (ecu)->priv->ifindex, \
-		(ecu)->name, (ecu)->sa, ##__VA_ARGS__)
-#define ecu_alert(ecu, fmt, ...) \
-	pr_alert("j1939-%i,%016llx,%02x: " fmt, (ecu)->priv->ifindex, \
+	pr_debug("j1939-%i,%016llx,%02x: " fmt, (ecu)->priv->netdev->ifindex, \
 		(ecu)->name, (ecu)->sa, ##__VA_ARGS__)
 
 /* ECU device interface */
@@ -52,7 +49,7 @@ void put_j1939_ecu(struct j1939_ecu *ecu)
 }
 
 struct j1939_ecu *_j1939_ecu_get_register(struct j1939_priv *priv, name_t name,
-					  int create_if_necessary)
+					  bool create_if_necessary)
 {
 	struct j1939_ecu *ecu, *dut;
 
@@ -63,9 +60,9 @@ struct j1939_ecu *_j1939_ecu_get_register(struct j1939_priv *priv, name_t name,
 			return dut;
 	}
 
-	if (!create_if_necessary) {
+	if (!create_if_necessary)
 		return ERR_PTR(-ENODEV);
-	}
+
 	/* alloc */
 	ecu = kzalloc(sizeof(*ecu), gfp_any());
 	if (!ecu)
@@ -99,26 +96,21 @@ void _j1939_ecu_unregister(struct j1939_ecu *ecu)
 	put_j1939_ecu(ecu);
 }
 
-struct j1939_ecu *j1939_ecu_find_by_addr(int sa, int ifindex)
+struct j1939_ecu *_j1939_ecu_find_by_addr(u8 sa, struct j1939_priv *priv)
 {
 	struct j1939_ecu *ecu;
-	struct j1939_priv *priv;
 
 	if (!j1939_address_is_unicast(sa))
-		return NULL;
-	priv = j1939_priv_find(ifindex);
-	if (!priv)
 		return NULL;
 	read_lock_bh(&priv->lock);
 	ecu = priv->ents[sa].ecu;
 	if (ecu)
 		get_j1939_ecu(ecu);
 	read_unlock_bh(&priv->lock);
-	put_j1939_priv(priv);
 	return ecu;
 }
 
-int j1939_name_to_sa(u64 name, int ifindex)
+u8 j1939_name_to_sa(name_t name, int ifindex)
 {
 	struct j1939_ecu *ecu;
 	struct j1939_priv *priv;
@@ -126,7 +118,7 @@ int j1939_name_to_sa(u64 name, int ifindex)
 
 	if (!name)
 		return J1939_NO_ADDR;
-	priv = j1939_priv_find(ifindex);
+	priv = j1939_priv_get_by_ifindex(ifindex);
 	if (!priv)
 		return J1939_NO_ADDR;
 
@@ -141,7 +133,7 @@ int j1939_name_to_sa(u64 name, int ifindex)
 		}
 	}
 	read_unlock_bh(&priv->lock);
-	put_j1939_priv(priv);
+	j1939_priv_put(priv);
 	return sa;
 }
 
@@ -174,11 +166,11 @@ struct j1939_ecu *j1939_ecu_find_by_name(name_t name, int ifindex)
 		return NULL;
 	if (!ifindex)
 		return NULL;
-	priv = j1939_priv_find(ifindex);
+	priv = j1939_priv_get_by_ifindex(ifindex);
 	if (!priv)
 		return NULL;
 	ecu = _j1939_ecu_find_by_name(name, priv);
-	put_j1939_priv(priv);
+	j1939_priv_put(priv);
 	return ecu;
 }
 
@@ -187,7 +179,7 @@ struct j1939_ecu *j1939_ecu_find_by_name(name_t name, int ifindex)
  * These functions originate from userspace manipulating sockets,
  * so locking is straigforward
  */
-void j1939_addr_local_get(struct j1939_priv *priv, int sa)
+void j1939_addr_local_get(struct j1939_priv *priv, u8 sa)
 {
 	if (!j1939_address_is_unicast(sa))
 		return;
@@ -196,7 +188,7 @@ void j1939_addr_local_get(struct j1939_priv *priv, int sa)
 	write_unlock_bh(&priv->lock);
 }
 
-void j1939_addr_local_put(struct j1939_priv *priv, int sa)
+void j1939_addr_local_put(struct j1939_priv *priv, u8 sa)
 {
 	if (!j1939_address_is_unicast(sa))
 		return;
@@ -205,7 +197,7 @@ void j1939_addr_local_put(struct j1939_priv *priv, int sa)
 	write_unlock_bh(&priv->lock);
 }
 
-void j1939_name_local_get(struct j1939_priv *priv, u64 name)
+void j1939_name_local_get(struct j1939_priv *priv, name_t name)
 {
 	struct j1939_ecu *ecu;
 
@@ -213,7 +205,8 @@ void j1939_name_local_get(struct j1939_priv *priv, u64 name)
 		return;
 
 	write_lock_bh(&priv->lock);
-	ecu = _j1939_ecu_get_register(priv, name, 1);
+	ecu = _j1939_ecu_get_register(priv, name, true);
+	/* TODO: do proper error handling and pass error down the callstack */
 	if (!IS_ERR(ecu)) {
 		get_j1939_ecu(ecu);
 		++ecu->nusers;
@@ -224,7 +217,7 @@ void j1939_name_local_get(struct j1939_priv *priv, u64 name)
 	write_unlock_bh(&priv->lock);
 }
 
-void j1939_name_local_put(struct j1939_priv *priv, u64 name)
+void j1939_name_local_put(struct j1939_priv *priv, name_t name)
 {
 	struct j1939_ecu *ecu;
 
@@ -232,7 +225,7 @@ void j1939_name_local_put(struct j1939_priv *priv, u64 name)
 		return;
 
 	write_lock_bh(&priv->lock);
-	ecu = _j1939_ecu_get_register(priv, name, 0);
+	ecu = _j1939_ecu_get_register(priv, name, false);
 	if (!IS_ERR(ecu)) {
 		--ecu->nusers;
 		if (priv->ents[ecu->sa].ecu == ecu)

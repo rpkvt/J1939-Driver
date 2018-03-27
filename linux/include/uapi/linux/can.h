@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: ((GPL-2.0 WITH Linux-syscall-note) OR BSD-3-Clause) */
 /*
  * linux/can.h
  *
@@ -181,15 +182,16 @@ struct sockaddr_can {
 		struct {
 			/* 8 byte name when using dynamic addressing */
 			__u64 name;
+
 			/* pgn:
-			 * 8bit: PS in PDU2 case, else 0
-			 * 8bit: PF
-			 * 1bit: DP
-			 * 1bit: reserved
+			 * 8 bit: PS in PDU2 case, else 0
+			 * 8 bit: PF
+			 * 1 bit: DP
+			 * 1 bit: reserved
 			 */
 			__u32 pgn;
 
-			/* 1byte address */
+			/* 1 byte address */
 			__u8 addr;
 		} j1939;
 

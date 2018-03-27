@@ -1,5 +1,5 @@
 diff --git a/include/uapi/linux/can/j1939.h b/include/uapi/linux/can/j1939.h
-index 4d0d23e..6c974ba 100644
+index cd4661a..98392f7 100644
 --- a/include/uapi/linux/can/j1939.h
 +++ b/include/uapi/linux/can/j1939.h
 @@ -59,6 +59,7 @@ enum {
@@ -11,24 +11,23 @@ index 4d0d23e..6c974ba 100644
  
  enum {
 diff --git a/net/can/j1939/j1939-priv.h b/net/can/j1939/j1939-priv.h
-index 5ef7b37..f93088e 100644
+index 2e54092..3b62e03 100644
 --- a/net/can/j1939/j1939-priv.h
 +++ b/net/can/j1939/j1939-priv.h
-@@ -222,6 +222,11 @@ struct j1939_sk_buff_cb {
+@@ -202,6 +202,10 @@ struct j1939_sk_buff_cb {
  
  #define ECU_LOCAL 1
  
-+	/* Flags for modifying the transport protocol*/
++	/*   Flags for modifying the transport protocol*/
 +	int tpflags;
 +
-+#define BAM_NODELAY 1
-+
++#define BAM_NODELAY 1 
  	/* for tx, MSG_SYN will be used to sync on sockets */
  	int msg_flags;
  
-@@ -235,6 +240,23 @@ struct j1939_sk_buff_cb {
- #define J1939_MSG_RESERVED MSG_SYN
- #define J1939_MSG_SYNC MSG_SYN
+@@ -219,6 +223,22 @@ static inline struct j1939_sk_buff_cb *j1939_get_cb(struct sk_buff *skb)
+ 	return (struct j1939_sk_buff_cb *)skb->cb;
+ }
  
 +//Check if we want to disable the normal BAM 50 ms delay
 +//Return 0 if we want to disable the delay
@@ -46,44 +45,28 @@ index 5ef7b37..f93088e 100644
 +	return 1;
 +}
 +
-+
  static inline int j1939cb_is_broadcast(const struct j1939_sk_buff_cb *skcb)
  {
- 	return (!skcb->dstname && (skcb->dstaddr == 0xff));
-diff --git a/net/can/j1939/main.c b/net/can/j1939/main.c
-index 3f4b018..8a02edb 100644
---- a/net/can/j1939/main.c
-+++ b/net/can/j1939/main.c
-@@ -129,8 +129,10 @@ int j1939_send(struct sk_buff *skb)
- 	struct can_frame *cf;
- 
- 	if (skb->len > 8)
-+	{
- 		/* re-route via transport protocol */
- 		return j1939_send_transport(skb);
-+	}
- 
- 	/* apply sanity checks */
- 	skcb->pgn &= (pgn_is_pdu1(skcb->pgn)) ? 0x3ff00 : 0x3ffff;
+ 	return (!skcb->addr.dst_name && (skcb->addr.da == 0xff));
 diff --git a/net/can/j1939/socket.c b/net/can/j1939/socket.c
-index 41d59dd..f2dbc4e 100644
+index ae53575..c3817be 100644
 --- a/net/can/j1939/socket.c
 +++ b/net/can/j1939/socket.c
-@@ -39,6 +39,7 @@ struct j1939_sock {
- #define JSK_CONNECTED BIT(1)
- #define PROMISC BIT(2)
- #define RECV_OWN BIT(3)
-+#define JSK_BAM_DELAY BIT(4)
+@@ -40,6 +40,7 @@ struct j1939_sock {
+ #define J1939_SOCK_CONNECTED BIT(1)
+ #define J1939_SOCK_PROMISC BIT(2)
+ #define J1939_SOCK_RECV_OWN BIT(3)
++#define J1939_SOCK_BAM_DELAY BIT(4)
  
- 	int ifindex_started; /* ifindex of netdev */
- 
-@@ -538,6 +539,13 @@ static int j1939sk_setsockopt(struct socket *sock, int level, int optname,
+ 	struct j1939_addr addr;
+ 	struct j1939_filter *filters;
+@@ -473,6 +474,13 @@ static int j1939sk_setsockopt(struct socket *sock, int level, int optname,
  		jsk->sk.sk_priority = j1939_to_sk_priority(tmp);
  		release_sock(&jsk->sk);
  		return 0;
 +	case SO_J1939_BAM_DELAY_DISABLE:
 +		//Enables/Disables delay
-+		tmp = j1939sk_setsockopt_flag(jsk, optval, optlen, JSK_BAM_DELAY);
++		tmp = j1939sk_setsockopt_flag(jsk, optval, optlen, J1939_SOCK_BAM_DELAY);
 +		//printk("DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 +		//printk("DEBUG: SO_J1939_BAM_DELAY_DISABLE used with value: %d\n",tmp);
 +		//printk("DEBUG: jsk->state: %d\n",(int)(jsk->state));
@@ -91,22 +74,23 @@ index 41d59dd..f2dbc4e 100644
  	default:
  		return -ENOPROTOOPT;
  	}
-@@ -572,6 +580,9 @@ static int j1939sk_getsockopt(struct socket *sock, int level, int optname,
+@@ -507,6 +515,9 @@ static int j1939sk_getsockopt(struct socket *sock, int level, int optname,
  	case SO_J1939_SEND_PRIO:
  		tmp = j1939_prio(jsk->sk.sk_priority);
  		break;
 +	case SO_J1939_BAM_DELAY_DISABLE:
-+		tmp = (jsk->state & JSK_BAM_DELAY) ? 1 : 0;
++		tmp = (jsk->state & J1939_SOCK_BAM_DELAY) ? 1 : 0;
 +		break;
  	default:
  		ret = -ENOPROTOOPT;
  		goto no_copy;
-@@ -715,6 +726,11 @@ static int j1939sk_sendmsg(struct socket *sock, struct msghdr *msg, size_t size)
- 	skcb->srcaddr = jsk->addr.sa;
- 	skcb->dstaddr = jsk->addr.da;
+@@ -648,6 +659,12 @@ static int j1939sk_sendmsg(struct socket *sock, struct msghdr *msg, size_t size)
+ 	skcb->priority = j1939_prio(sk->sk_priority);
+ 	skcb->msg_flags = msg->msg_flags;
  
++
 +	//Check if delay has been disabled
-+	skcb->tpflags = (jsk->state & JSK_BAM_DELAY)?BAM_NODELAY:0;
++	skcb->tpflags = (jsk->state & J1939_SOCK_BAM_DELAY)?BAM_NODELAY:0;
 +	//printk("DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 +	//printk("DEBUG: skcb->tpflags state: %d\n",skcb->tpflags);
 +
@@ -114,13 +98,13 @@ index 41d59dd..f2dbc4e 100644
  		struct sockaddr_can *addr = msg->msg_name;
  
 diff --git a/net/can/j1939/transport.c b/net/can/j1939/transport.c
-index 5f23fcf..ff87021 100644
+index 7aa5739..2ae79bc 100644
 --- a/net/can/j1939/transport.c
 +++ b/net/can/j1939/transport.c
-@@ -976,7 +976,25 @@ static int j1939tp_txnext(struct session *session)
+@@ -951,7 +951,25 @@ static int j1939tp_txnext(struct session *session)
  		session->last_txcmd = dat[0];
  		/* must lock? */
- 		if (tp_cmd_bam == dat[0])
+ 		if (J1939_TP_CMD_BAM == dat[0])
 -			j1939tp_schedule_txtimer(session, 50);
 +		{
 +			//printk("DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
@@ -143,8 +127,8 @@ index 5f23fcf..ff87021 100644
 +		}
  		j1939tp_set_rxtimeout(session, 1250);
  		break;
- 	case tp_cmd_rts:
-@@ -1086,8 +1104,19 @@ static int j1939tp_txnext(struct session *session)
+ 	case J1939_TP_CMD_RTS:
+@@ -1061,8 +1079,20 @@ static int j1939tp_txnext(struct session *session)
  			session->last_txcmd = 0xff;
  			++pkt_done;
  			++session->pkt.tx;
@@ -162,6 +146,7 @@ index 5f23fcf..ff87021 100644
 +
 +			//printk("DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 +			//printk("DEBUG: pdelay: %d\n",pdelay);
++
 +
  			if ((session->pkt.tx < session->pkt.total) && pdelay) {
  				j1939tp_schedule_txtimer(session, pdelay);

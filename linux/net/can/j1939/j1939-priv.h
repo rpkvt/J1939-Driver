@@ -11,16 +11,16 @@
 #ifndef _J1939_PRIV_H_
 #define _J1939_PRIV_H_
 
+#include <linux/atomic.h>
+#include <linux/if_arp.h>
+#include <linux/interrupt.h>
 #include <linux/kref.h>
 #include <linux/list.h>
-#include <net/sock.h>
-
-#include <linux/proc_fs.h>
 #include <linux/module.h>
+#include <linux/can/can-ml.h>
 #include <linux/can/j1939.h>
-#include <linux/atomic.h>
-#include <linux/interrupt.h>
-#include <linux/if_arp.h>
+
+#include <net/sock.h>
 
 #include "../af_can.h"
 
@@ -55,8 +55,6 @@ struct j1939_ecu {
 	int nusers;
 };
 
-#define to_j1939_ecu(x) container_of((x), struct j1939_ecu, dev)
-
 struct j1939_priv {
 	struct list_head ecus;
 	/* local list entry in priv
@@ -73,8 +71,12 @@ struct j1939_priv {
 	/* segments need a lock to protect the above list */
 	rwlock_t lock;
 
-	int ifindex;
 	struct net_device *netdev;
+
+	/* list of 256 ecu ptrs, that cache the claimed addresses.
+	 * also protected by the above lock
+	 * don't use directly, use j1939_ecu_set_address() instead
+	 */
 	struct addr_ent {
 		ktime_t rxtime;
 		struct j1939_ecu *ecu;
@@ -89,43 +91,26 @@ struct j1939_priv {
 	 */
 	struct tasklet_struct ac_task;
 
-	/* list of 256 ecu ptrs, that cache the claimed addresses.
-	 * also protected by the above lock
-	 * don't use directly, use j1939_ecu_set_address() instead
-	 */
 	struct kref kref;
-
-	/* ref counter that hold the number of active listeners.
-	 * This number itself is protected with a mutex
-	 */
-	int nusers;
 };
 
-#define to_j1939_priv(x) container_of((x), struct j1939_priv, dev)
-
 void put_j1939_ecu(struct j1939_ecu *ecu);
-void put_j1939_priv(struct j1939_priv *segment);
 
 static inline void get_j1939_ecu(struct j1939_ecu *dut)
 {
 	kref_get(&dut->kref);
 }
 
-static inline void get_j1939_priv(struct j1939_priv *dut)
-{
-	kref_get(&dut->kref);
-}
-
 /* keep the cache of what is local */
-void j1939_addr_local_get(struct j1939_priv *priv, int sa);
-void j1939_addr_local_put(struct j1939_priv *priv, int sa);
-void j1939_name_local_get(struct j1939_priv *priv, u64 name);
-void j1939_name_local_put(struct j1939_priv *priv, u64 name);
+void j1939_addr_local_get(struct j1939_priv *priv, u8 sa);
+void j1939_addr_local_put(struct j1939_priv *priv, u8 sa);
+void j1939_name_local_get(struct j1939_priv *priv, name_t name);
+void j1939_name_local_put(struct j1939_priv *priv, name_t name);
 
 /* conversion function between (struct sock | struct sk_buff)->sk_priority
  * from linux and j1939 priority field
  */
-static inline int j1939_prio(int sk_priority)
+static inline priority_t j1939_prio(int sk_priority)
 {
 	if (sk_priority < 0)
 		return 6; /* default */
@@ -135,30 +120,38 @@ static inline int j1939_prio(int sk_priority)
 		return 7 - sk_priority;
 }
 
-static inline int j1939_to_sk_priority(int j1939_prio)
+static inline int j1939_to_sk_priority(priority_t j1939_prio)
 {
 	return 7 - j1939_prio;
 }
 
-static inline int j1939_address_is_valid(u8 sa)
+static inline bool j1939_address_is_valid(u8 sa)
 {
 	return sa != J1939_NO_ADDR;
 }
 
-static inline int j1939_address_is_unicast(u8 sa)
+static inline bool j1939_address_is_unicast(u8 sa)
 {
 	return sa <= SA_MAX_UNICAST;
 }
 
-static inline int pgn_is_pdu1(pgn_t pgn)
+static inline bool pgn_is_pdu1(pgn_t pgn)
 {
 	/* ignore dp & res bits for this */
 	return (pgn & 0xff00) < 0xf000;
 }
 
-static inline int pgn_is_valid(pgn_t pgn)
+/* function to see if pgn is to be evaluated */
+static inline bool pgn_is_valid(pgn_t pgn)
 {
 	return pgn <= PGN_MAX;
+}
+
+/* test function to avoid non-zero DA placeholder
+ * for pdu1 pgn's */
+static inline bool pgn_is_clean_pdu(pgn_t pgn)
+{
+	return pgn_is_pdu1(pgn) ? !(pgn & 0xff) : 1;
 }
 
 /* utility to correctly unregister a SA */
@@ -181,52 +174,38 @@ static inline void j1939_ecu_remove_sa(struct j1939_ecu *ecu)
 	write_unlock_bh(&ecu->priv->lock);
 }
 
-int j1939_name_to_sa(u64 name, int ifindex);
-struct j1939_ecu *j1939_ecu_find_by_addr(int sa, int ifindex);
+u8 j1939_name_to_sa(name_t name, int ifindex);
+struct j1939_ecu *_j1939_ecu_find_by_addr(u8 sa, struct j1939_priv *priv);
 struct j1939_ecu *j1939_ecu_find_by_name(name_t name, int ifindex);
 /* find_by_name, with kref & read_lock taken */
 struct j1939_ecu *j1939_ecu_find_priv_default_tx(int ifindex, name_t *pname,
 						 u8 *paddr);
+struct j1939_addr {
+	name_t src_name;
+	name_t dst_name;
+	pgn_t pgn;
 
-extern struct proc_dir_entry *j1939_procdir;
-
-/* j1939 printk */
-#define j1939_printk(level, ...) printk(level "J1939 " __VA_ARGS__)
-
-#define j1939_err(...)		j1939_printk(KERN_ERR, __VA_ARGS__)
-#define j1939_warning(...)	j1939_printk(KERN_WARNING, __VA_ARGS__)
-#define j1939_notice(...)	j1939_printk(KERN_NOTICE, __VA_ARGS__)
-#define j1939_info(...)		j1939_printk(KERN_INFO, __VA_ARGS__)
-#ifdef DEBUG
-#define j1939_debug(...)	j1939_printk(KERN_DEBUG, __VA_ARGS__)
-#else
-#define j1939_debug(...)
-#endif
-
-struct sk_buff;
+	u8 sa;
+	u8 da;
+};
 
 /* control buffer of the sk_buff */
 struct j1939_sk_buff_cb {
-	pgn_t pgn;
+	struct j1939_addr addr;
 	priority_t priority;
-	u8 srcaddr;
-	u8 dstaddr;
-	name_t srcname;
-	name_t dstname;
 
 	/* Flags for quick lookups during skb processing
 	 * These are set in the receive path only
 	 */
-	int srcflags;
-	int dstflags;
+	int src_flags;
+	int dst_flags;
 
 #define ECU_LOCAL 1
 
-	/* Flags for modifying the transport protocol*/
+	/*   Flags for modifying the transport protocol*/
 	int tpflags;
 
-#define BAM_NODELAY 1
-
+#define BAM_NODELAY 1 
 	/* for tx, MSG_SYN will be used to sync on sockets */
 	int msg_flags;
 
@@ -237,8 +216,12 @@ struct j1939_sk_buff_cb {
 	struct sock *insock;
 };
 
-#define J1939_MSG_RESERVED MSG_SYN
-#define J1939_MSG_SYNC MSG_SYN
+static inline struct j1939_sk_buff_cb *j1939_get_cb(struct sk_buff *skb)
+{
+	BUILD_BUG_ON(sizeof(struct j1939_sk_buff_cb) > sizeof(skb->cb));
+
+	return (struct j1939_sk_buff_cb *)skb->cb;
+}
 
 //Check if we want to disable the normal BAM 50 ms delay
 //Return 0 if we want to disable the delay
@@ -256,10 +239,9 @@ static inline int j1939cb_use_bamdelay(const struct j1939_sk_buff_cb *skcb)
 	return 1;
 }
 
-
 static inline int j1939cb_is_broadcast(const struct j1939_sk_buff_cb *skcb)
 {
-	return (!skcb->dstname && (skcb->dstaddr == 0xff));
+	return (!skcb->addr.dst_name && (skcb->addr.da == 0xff));
 }
 
 int j1939_send(struct sk_buff *);
@@ -278,7 +260,7 @@ void j1939_recv_address_claim(struct sk_buff *, struct j1939_priv *priv);
  * when a matching ecu already exists, then that is returned
  */
 struct j1939_ecu *_j1939_ecu_get_register(struct j1939_priv *priv,
-					  name_t name, int create_if_necessary);
+					  name_t name, bool create_if_necessary);
 
 /* unregister must be called with lock held */
 void _j1939_ecu_unregister(struct j1939_ecu *);
@@ -286,39 +268,32 @@ void _j1939_ecu_unregister(struct j1939_ecu *);
 int j1939_netdev_start(struct net_device *);
 void j1939_netdev_stop(struct net_device *);
 
-static inline struct j1939_priv *dev_j1939_priv(struct net_device *dev)
+void __j1939_priv_release(struct kref *kref);
+struct j1939_priv *j1939_priv_get(struct net_device *dev);
+struct j1939_priv *j1939_priv_get_by_ifindex(int ifindex);
+
+
+static inline void j1939_priv_set(struct net_device *dev, struct j1939_priv *priv)
 {
-	struct dev_rcv_lists *can_ml_priv;
-	struct j1939_priv *priv;
+	struct can_ml_priv *can_ml_priv = dev->ml_priv;
 
-	if (dev->type != ARPHRD_CAN)
-		return NULL;
-
-	can_ml_priv = dev->ml_priv;
-	priv = can_ml_priv ? can_ml_priv->j1939_priv : NULL;
-
-	if (priv)
-		get_j1939_priv(priv);
-
-	return priv;
+	can_ml_priv->j1939_priv = priv;
 }
 
-static inline struct j1939_priv *j1939_priv_find(int ifindex)
+static inline struct j1939_priv *__j1939_priv_get(struct net_device *dev)
 {
-	struct j1939_priv *priv;
-	struct net_device *netdev;
+	struct can_ml_priv *can_ml_priv = dev->ml_priv;
 
-	netdev = dev_get_by_index(&init_net, ifindex);
-	priv = dev_j1939_priv(netdev);
+	return can_ml_priv->j1939_priv;
+}
 
-	if (netdev)
-		dev_put(netdev);
-
-	return priv;
+static inline void j1939_priv_put(struct j1939_priv *priv)
+{
+	kref_put(&priv->kref, __j1939_priv_release);
 }
 
 /* notify/alert all j1939 sockets bound to ifindex */
-void j1939sk_netdev_event(int ifindex, int error_code);
+void j1939sk_netdev_event(struct net_device *netdev, int error_code);
 int j1939tp_rmdev_notifier(struct net_device *netdev);
 
 /* decrement pending skb for a j1939 socket */
