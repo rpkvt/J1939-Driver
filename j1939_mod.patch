@@ -98,7 +98,7 @@ index ebbf0f7..558d7ba 100644
  		struct sockaddr_can *addr = msg->msg_name;
  
 diff --git a/net/can/j1939/transport.c b/net/can/j1939/transport.c
-index 18e02c6..12c262c 100644
+index 18e02c6..58850da 100644
 --- a/net/can/j1939/transport.c
 +++ b/net/can/j1939/transport.c
 @@ -942,8 +942,26 @@ static int j1939_tp_txnext(struct net *net, struct j1939_session *session)
@@ -112,7 +112,7 @@ index 18e02c6..12c262c 100644
 +			//printk("DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 +			//printk("DEBUG: Calling j1939tp_schedule_txtimer\n");
 +			//Use  50 ms delay
-+			if(j1939cb_use_bamdelay(session->cb))
++			if(j1939cb_use_bamdelay(session->skcb))
 +			{
 +				//printk("DEBUG: Using 50 ms delay\n");
 +
