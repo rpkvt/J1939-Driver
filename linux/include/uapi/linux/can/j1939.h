@@ -8,19 +8,19 @@
  * published by the Free Software Foundation.
  */
 
-#ifndef _UAPI_CAN_J1939_H_
-#define _UAPI_CAN_J1939_H_
+#ifndef _J1939_H_
+#define _J1939_H_
 
 #include <linux/types.h>
 #include <linux/socket.h>
 #include <linux/can.h>
 
 #define J1939_IDLE_ADDR	0xfe
-#define J1939_NO_ADDR 0xff
-#define J1939_NO_NAME 0
-#define J1939_NO_PGN 0x40000
-
-/* J1939 Parameter Group Number
+#define J1939_NO_ADDR	0xff
+#define J1939_NO_NAME	0
+#define J1939_NO_PGN	0x40000
+/*
+ * J1939 Parameter Group Number
  *
  * bit 0-7	: PDU Specific (PS)
  * bit 8-15	: PDU Format (PF)
@@ -30,14 +30,16 @@
  */
 typedef __u32 pgn_t;
 
-/* J1939 Priority
+/*
+ * J1939 Priority
  *
  * bit 0-2	: Priority (P)
  * bit 3-7	: set to zero
  */
 typedef __u8 priority_t;
 
-/* J1939 NAME
+/*
+ * J1939 NAME
  *
  * bit 0-20	: Identity Number
  * bit 21-31	: Manufacturer Code
@@ -52,14 +54,15 @@ typedef __u8 priority_t;
  */
 typedef __u64 name_t;
 
-/* J1939 socket options */
+/*
+ * J1939 socket options
+ */
 #define SOL_CAN_J1939 (SOL_CAN_BASE + CAN_J1939)
 enum {
 	SO_J1939_FILTER = 1,	/* set filters */
 	SO_J1939_PROMISC = 2,	/* set/clr promiscuous mode */
 	SO_J1939_RECV_OWN = 3,
 	SO_J1939_SEND_PRIO = 4,
-	SO_J1939_BAM_DELAY_DISABLE = 5, //Enable/Disable 50 ms delay for BAM messages
 };
 
 enum {
@@ -77,6 +80,20 @@ struct j1939_filter {
 	pgn_t pgn_mask;
 };
 
-#define J1939_FILTER_MAX 512 /* maximum number of j1939_filter set via setsockopt() */
+/*
+ * RTNETLINK
+ */
+enum {
+	IFLA_J1939_UNSPEC,
+	IFLA_J1939_ENABLE,
+	IFLA_J1939_MAX,
+};
 
-#endif /* !_UAPI_CAN_J1939_H_ */
+enum {
+	IFA_J1939_UNSPEC,
+	IFA_J1939_ADDR,
+	IFA_J1939_NAME,
+	IFA_J1939_MAX,
+};
+
+#endif /* _J1939_H_ */

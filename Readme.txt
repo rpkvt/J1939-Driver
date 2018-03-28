@@ -1,12 +1,12 @@
-This contains the modification for kernel version 4.15-rc9. 
+This contains the modification for kernel version 4.16-rc4. 
 
 This version comes from this repository:
 
 git.kernel.org/pub/scm/linux/kernel/git/mkl/linux-can-next.git
 
-Branch: j1939-v4.15-rc9
+Branch: j1939
 
-Commit:	1e4654996e4c73e02198e9d71ab0b17ff217e363
+Commit:	415563b53d9950d1272af3d9f9a981d19facd238 	
 
 Every version has its own branch so refer to that.
 
