@@ -681,6 +681,8 @@ static void j1939_xtp_rx_rts(struct net *net, struct sk_buff *skb, bool extd)
 	const u8 *dat;
 	pgn_t pgn;
 
+	pr_alert("Debugging - Function: %s Line: %s\n", __func__, __LINE__);
+
 	dat = skb->data;
 	pgn = j1939_xtp_ctl_to_pgn(dat);
 
@@ -694,19 +696,24 @@ static void j1939_xtp_rx_rts(struct net *net, struct sk_buff *skb, bool extd)
 	 * TP is pending in the other direction
 	 */
 	session = j1939_session_get_by_skb(net, j1939_sessionq(net, extd), skb, false);
-	if (session && !j1939_tp_im_transmitter(skb)) {
+	if (session && !j1939_tp_im_transmitter(skb))
+	{
+		pr_alert("Debugging - Function: %s Line: %s\n", __func__, __LINE__);
 		/* RTS on pending connection */
 		j1939_session_cancel(net, session, J1939_ABORT_BUSY);
 		if (pgn != session->skcb->addr.pgn && dat[0] != J1939_TP_CMD_BAM)
 			j1939_xtp_tx_abort(skb, extd, 1, J1939_ABORT_BUSY, pgn);
 		j1939_session_put(session);
 		return;
-	} else if (!session && j1939_tp_im_transmitter(skb)) {
+	}
+	else if (!session && j1939_tp_im_transmitter(skb))
+	{
 		pr_alert("%s: I should tx (%i %02x %02x)\n", __func__,
 			 skb->skb_iif, skcb->addr.sa, skcb->addr.da);
 		return;
 	}
-	if (session && session->last_cmd != 0) {
+	if (session && session->last_cmd != 0)
+	{
 		/* we received a second rts on the same connection */
 		pr_alert("%s: connection exists (%i %02x %02x)\n", __func__,
 			 skb->skb_iif, skcb->addr.sa, skcb->addr.da);
@@ -714,14 +721,19 @@ static void j1939_xtp_rx_rts(struct net *net, struct sk_buff *skb, bool extd)
 		j1939_session_put(session);
 		return;
 	}
-	if (session) {
+	if (session)
+	{
+		pr_alert("Debugging - Function: %s Line: %s\n", __func__, __LINE__);
 		/* make sure 'sa' & 'da' are correct !
 		 * They may be 'not filled in yet' for sending
 		 * skb's, since they did not pass the Address Claim ever.
 		 */
 		session->skcb->addr.sa = skcb->addr.sa;
 		session->skcb->addr.da = skcb->addr.da;
-	} else {
+	}
+	else
+	{
+		pr_alert("Debugging - Function: %s Line: %s\n", __func__, __LINE__);
 		int abort = 0;
 
 		if (extd) {
@@ -773,11 +785,14 @@ static void j1939_xtp_rx_rts(struct net *net, struct sk_buff *skb, bool extd)
 
 	j1939_tp_set_rxtimeout(session, 1250);
 
-	if (j1939_tp_im_receiver(session->skb)) {
+	if (j1939_tp_im_receiver(session->skb))
+	{
+		pr_alert("Debugging - Function: %s Line: %s\n", __func__, __LINE__);
 		if (extd || dat[0] != J1939_TP_CMD_BAM)
 			j1939_session_schedule_txnow(session);
 	}
 
+	pr_alert("Debugging - Function: %s Line: %s\n", __func__, __LINE__);
 	/* as soon as it's inserted, things can go fast
 	 * protect against a long delay
 	 * between spin_unlock & next statement
