@@ -1,14 +1,12 @@
+# SPDX-License-Identifier: GPL-2.0
 
-obj-$(CONFIG_CAN_J1939)	+= can-j1939.o
+cppflags-$(CONFIG_CAN_J1939_DEBUG) += -DDEBUG
 
-can-j1939-objs := main.o \
-	proc.o bus.o \
-	rtnl.o \
+obj-$(CONFIG_CAN_J1939) += can-j1939.o
+
+can-j1939-objs := \
+	address-claim.o \
+	bus.o \
+	main.o \
 	socket.o \
-	address-claim.o transport.o \
-	promisc.o filter.o
-
-ifeq ($(CONFIG_CAN_J1939_DEBUG),y)
-	EXTRA_CFLAGS += -DDEBUG
-endif
-
+	transport.o

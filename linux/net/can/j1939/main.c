@@ -1,5 +1,5 @@
-/*
- * Copyright (c) 2010-2011 EIA Electronics
+// SPDX-License-Identifier: GPL-2.0
+/* Copyright (c) 2010-2011 EIA Electronics
  *
  * Authors:
  * Kurt Van Dijck <kurt.van.dijck@eia.be>
@@ -10,11 +10,10 @@
  * as published by the Free Software Foundation
  */
 
-/*
- * Core of can-j1939 that links j1939 to CAN.
- */
+/* Core of can-j1939 that links j1939 to CAN. */
 
 #include <linux/version.h>
+#include <linux/mutex.h>
 #include <linux/module.h>
 #include <linux/init.h>
 #include <linux/socket.h>
@@ -29,429 +28,367 @@
 MODULE_DESCRIPTION("PF_CAN SAE J1939");
 MODULE_LICENSE("GPL v2");
 MODULE_AUTHOR("EIA Electronics (Kurt Van Dijck & Pieter Beyens)");
-
-static struct {
-	struct notifier_block notifier;
-} s;
+MODULE_ALIAS("can-proto-" __stringify(CAN_J1939));
 
 /* LOWLEVEL CAN interface */
 
 /* CAN_HDR: #bytes before can_frame data part */
-#define CAN_HDR	(offsetof(struct can_frame, data))
+#define J1939_CAN_HDR (offsetof(struct can_frame, data))
+
 /* CAN_FTR: #bytes beyond data part */
-#define CAN_FTR	(sizeof(struct can_frame)-CAN_HDR-\
-		sizeof(((struct can_frame *)0)->data))
-
-static void j1939_recv_ecu_flags(struct sk_buff *skb, void *data)
-{
-	struct j1939_segment *jseg = data;
-	struct j1939_sk_buff_cb *cb = (void *)skb->cb;
-	struct addr_ent *paddr;
-
-	if (!jseg)
-		return;
-	write_lock_bh(&jseg->lock);
-	if (j1939_address_is_unicast(cb->src.addr)) {
-		paddr = &jseg->ents[cb->src.addr];
-		paddr->rxtime = ktime_get();
-		if (0x0ee00 == cb->pgn) {
-			/* do not touch many things for Address claims */
-		} else if (paddr->ecu) {
-			paddr->ecu->rxtime = paddr->rxtime;
-			cb->src.flags = paddr->ecu->flags;
-		} else {
-			if (!paddr->flags)
-				paddr->flags |= ECUFLAG_REMOTE;
-			cb->src.flags = paddr->flags;
-		}
-	}
-
-	if (j1939_address_is_unicast(cb->dst.addr)) {
-		paddr = &jseg->ents[cb->dst.addr];
-		if (paddr->ecu)
-			cb->dst.flags = paddr->ecu->flags;
-		else
-			cb->dst.flags = paddr->flags ?: ECUFLAG_REMOTE;
-	}
-	write_unlock_bh(&jseg->lock);
-}
+#define J1939_CAN_FTR (sizeof(struct can_frame) - J1939_CAN_HDR - \
+		 sizeof(((struct can_frame *)0)->data))
 
 /* lowest layer */
-static void j1939_can_recv(struct sk_buff *skb, void *data)
+static void j1939_can_recv(struct sk_buff *iskb, void *data)
 {
-	int orig_len;
-	struct j1939_sk_buff_cb *sk_addr;
-	struct can_frame *msg;
-	uint8_t saved_cb[sizeof(skb->cb)];
+	struct j1939_priv *priv = data;
+	struct net_device *ndev = priv->ndev;
+	struct net *net = dev_net(ndev);
+	struct sk_buff *skb;
+	struct j1939_sk_buff_cb *skcb;
+	struct can_frame *cf;
 
-	BUILD_BUG_ON(sizeof(*sk_addr) > sizeof(skb->cb));
-	/*
-	 * get a pointer to the header of the skb
+	/* create a copy of the skb
+	 * j1939 only delivers the real data bytes,
+	 * the header goes into sockaddr.
+	 * j1939 may not touch the incoming skb in such way
+	 */
+	skb = skb_clone(iskb, GFP_ATOMIC);
+
+	/* get a pointer to the header of the skb
 	 * the skb payload (pointer) is moved, so that the next skb_data
 	 * returns the actual payload
 	 */
-	msg = (void *)skb->data;
-	orig_len = skb->len;
-	skb_pull(skb, CAN_HDR);
+	cf = (void *)skb->data;
+	skb_pull(skb, J1939_CAN_HDR);
+
 	/* fix length, set to dlc, with 8 maximum */
-	skb_trim(skb, min_t(uint8_t, msg->can_dlc, 8));
+	skb_trim(skb, min_t(uint8_t, cf->can_dlc, 8));
 
 	/* set addr */
-	sk_addr = (struct j1939_sk_buff_cb *)skb->cb;
-	memcpy(saved_cb, sk_addr, sizeof(saved_cb));
-	memset(sk_addr, 0, sizeof(*sk_addr));
-	if (skb->dev)
-		sk_addr->ifindex = skb->dev->ifindex;
-	sk_addr->priority = (msg->can_id & 0x1c000000) >> 26;
-	sk_addr->src.addr = msg->can_id & 0xff;
-	sk_addr->pgn = (msg->can_id & 0x3ffff00) >> 8;
-	if (pgn_is_pdu1(sk_addr->pgn)) {
+	skcb = j1939_skb_to_cb(skb);
+	memset(skcb, 0, sizeof(*skcb));
+
+	/* save incoming socket, without assigning the skb to it */
+	skcb->insock = iskb->sk;
+	skcb->priority = (cf->can_id >> 26) & 0x7;
+	skcb->addr.sa = cf->can_id;
+	skcb->addr.pgn = (cf->can_id >> 8) & J1939_PGN_MAX;
+	if (j1939_pgn_is_pdu1(skcb->addr.pgn)) {
 		/* Type 1: with destination address */
-		sk_addr->dst.addr = sk_addr->pgn & 0xff;
+		skcb->addr.da = skcb->addr.pgn;
 		/* normalize pgn: strip dst address */
-		sk_addr->pgn &= 0x3ff00;
+		skcb->addr.pgn &= 0x3ff00;
 	} else {
 		/* set broadcast address */
-		sk_addr->dst.addr = J1939_NO_ADDR;
+		skcb->addr.da = J1939_NO_ADDR;
 	}
-	j1939_recv_ecu_flags(skb, data);
-	j1939_recv(skb, j1939_level_can);
 
-	/* restore the original skb, should always work */
-	skb_push(skb, CAN_HDR);
-	/* no safety check, it just restores the skbuf's contents */
-	__skb_trim(skb, orig_len);
-	memcpy(sk_addr, saved_cb, sizeof(saved_cb));
+	/* update localflags */
+	read_lock_bh(&priv->lock);
+	if (j1939_address_is_unicast(skcb->addr.sa) &&
+	    priv->ents[skcb->addr.sa].nusers)
+		skcb->src_flags |= J1939_ECU_LOCAL;
+	if (j1939_address_is_unicast(skcb->addr.da) &&
+	    priv->ents[skcb->addr.da].nusers)
+		skcb->dst_flags |= J1939_ECU_LOCAL;
+	read_unlock_bh(&priv->lock);
+
+	/* deliver into the j1939 stack ... */
+	j1939_ac_recv(priv, skb);
+
+	if (j1939_tp_recv(net, skb))
+		/* this means the transport layer processed the message */
+		goto done;
+	j1939_sk_recv(skb);
+ done:
+	kfree_skb(skb);
 }
-
-static int j1939_send_can(struct sk_buff *skb)
-{
-	int ret, dlc;
-	canid_t canid;
-	struct j1939_sk_buff_cb *sk_addr;
-	struct net_device *netdev = NULL;
-	struct can_frame *msg;
-
-	dlc = skb->len;
-	if (dlc > 8)
-		return -EMSGSIZE;
-	ret = pskb_expand_head(skb, SKB_DATA_ALIGN(CAN_HDR),
-			CAN_FTR + (8-dlc), GFP_ATOMIC);
-	if (ret < 0)
-		return ret;
-
-	msg = (void *)skb_push(skb, CAN_HDR);
-	BUG_ON(!msg);
-	/* make it a full can frame */
-	skb_put(skb, CAN_FTR + (8 - dlc));
-
-	sk_addr = (struct j1939_sk_buff_cb *)skb->cb;
-	canid = CAN_EFF_FLAG |
-		(sk_addr->src.addr & 0xff) |
-		((sk_addr->priority & 0x7) << 26);
-	if (pgn_is_pdu1(sk_addr->pgn))
-		canid |= ((sk_addr->pgn & 0x3ff00) << 8) |
-			((sk_addr->dst.addr & 0xff) << 8);
-	else
-		canid |= ((sk_addr->pgn & 0x3ffff) << 8);
-
-	msg->can_id = canid;
-	msg->can_dlc = dlc;
-
-	/* set net_device */
-	ret = -ENODEV;
-	if (!skb->dev) {
-		if (!sk_addr->ifindex)
-			goto failed;
-		netdev = dev_get_by_index(&init_net, sk_addr->ifindex);
-		if (!netdev)
-			goto failed;
-		skb->dev = netdev;
-	}
-
-	/* fix the 'always free' policy of can_send */
-	skb = skb_get(skb);
-	ret = can_send(skb, 1);
-	if (!ret) {
-		/* free when can_send succeeded */
-		kfree_skb(skb);
-		/* is this necessary ? */
-		ret = RESULT_STOP;
-	}
-failed:
-	if (netdev)
-		dev_put(netdev);
-	return ret;
-}
-
-static int j1939_send_normalize(struct sk_buff *skb)
-{
-	struct j1939_sk_buff_cb *cb = (void *)skb->cb;
-	struct j1939_segment *jseg;
-	struct addr_ent *paddr;
-	struct j1939_ecu *ecu;
-	int ret = 0;
-
-	/* apply sanity checks */
-	cb->pgn &= (pgn_is_pdu1(cb->pgn)) ? 0x3ff00 : 0x3ffff;
-	if (cb->priority > 7)
-		cb->priority = 6;
-
-	/* verify source */
-	if (!cb->ifindex)
-		return -ENETUNREACH;
-	jseg = j1939_segment_find(cb->ifindex);
-	if (!jseg)
-		return -ENETUNREACH;
-	read_lock_bh(&jseg->lock);
-	/* verify source */
-	if (cb->src.name) {
-		ecu = j1939_ecu_find_by_name(cb->src.name, cb->ifindex);
-		cb->src.flags = ecu ? ecu->flags : 0;
-		if (ecu)
-			put_j1939_ecu(ecu);
-	} else if (j1939_address_is_unicast(cb->src.addr)) {
-		paddr = &jseg->ents[cb->src.addr];
-		cb->src.flags = paddr->flags;
-	} else if (cb->src.addr == J1939_IDLE_ADDR) {
-		/* allow always */
-		cb->src.flags = ECUFLAG_LOCAL;
-	} else {
-		/* J1939_NO_ADDR */
-		cb->src.flags = 0;
-	}
-	if (cb->src.flags & ECUFLAG_REMOTE) {
-		ret = -EREMOTE;
-		goto failed;
-	} else if (!(cb->src.flags & ECUFLAG_LOCAL)) {
-		ret = -EADDRNOTAVAIL;
-		goto failed;
-	}
-
-	/* verify destination */
-	if (cb->dst.name) {
-		ecu = j1939_ecu_find_by_name(cb->dst.name, cb->ifindex);
-		if (!ecu) {
-			ret = -EADDRNOTAVAIL;
-			goto failed;
-		}
-		cb->dst.flags = ecu->flags;
-		put_j1939_ecu(ecu);
-	} else if (cb->dst.addr == J1939_IDLE_ADDR) {
-		/* not a valid destination */
-		ret = -EADDRNOTAVAIL;
-		goto failed;
-	} else if (j1939_address_is_unicast(cb->dst.addr)) {
-		paddr = &jseg->ents[cb->dst.addr];
-		cb->dst.flags = paddr->flags;
-	} else {
-		cb->dst.flags = 0;
-	}
-
-	ret = 0;
-failed:
-	read_unlock_bh(&jseg->lock);
-	put_j1939_segment(jseg);
-	return ret;
-}
-
-/* TOPLEVEL interface */
-int j1939_recv(struct sk_buff *skb, int level)
-{
-	int ret;
-
-	/* this stack operates with fallthrough switch statement */
-	switch (level) {
-	default:
-		WARN_ONCE(1, "%s: unsupported level %i\n", __func__, level);
-		return 0;
-	case j1939_level_can:
-		ret = j1939_recv_address_claim(skb);
-		if (unlikely(ret))
-			break;
-		ret = j1939_recv_promisc(skb);
-		if (unlikely(ret))
-			break;
-		ret = j1939_recv_transport(skb);
-		if (unlikely(ret))
-			break;
-	case j1939_level_transport:
-	case j1939_level_sky:
-		ret = j1939_recv_distribute(skb);
-		break;
-	}
-	if (ret == RESULT_STOP)
-		return 0;
-	return ret;
-
-}
-EXPORT_SYMBOL_GPL(j1939_recv);
-
-int j1939_send(struct sk_buff *skb, int level)
-{
-	int ret;
-	struct sock *sk = NULL;
-
-	/* this stack operates with fallthrough switch statement */
-	switch (level) {
-	default:
-		WARN_ONCE(1, "%s: unsupported level %i\n", __func__, level);
-	case j1939_level_sky:
-		sk = skb->sk;
-		if (sk)
-			sock_hold(sk);
-		ret = j1939_send_normalize(skb);
-		if (unlikely(ret))
-			break;
-		ret = j1939_send_transport(skb);
-		if (unlikely(ret))
-			break;
-	case j1939_level_transport:
-		ret = j1939_send_address_claim(skb);
-		if (unlikely(ret))
-			break;
-	case j1939_level_can:
-		ret = j1939_send_can(skb);
-		if (RESULT_STOP == ret)
-			/* don't mark as stopped, it can't be better */
-			ret = 0;
-		break;
-	}
-	if (ret == RESULT_STOP)
-		ret = 0;
-	else if (!ret && sk)
-		j1939_sock_pending_del(sk);
-	if (sk)
-		sock_put(sk);
-	return ret;
-
-}
-EXPORT_SYMBOL_GPL(j1939_send);
 
 /* NETDEV MANAGEMENT */
 
-#define J1939_CAN_ID	CAN_EFF_FLAG
-#define J1939_CAN_MASK	(CAN_EFF_FLAG | CAN_RTR_FLAG)
-int j1939_segment_attach(struct net_device *netdev)
+/* values for can_rx_(un)register */
+#define J1939_CAN_ID CAN_EFF_FLAG
+#define J1939_CAN_MASK (CAN_EFF_FLAG | CAN_RTR_FLAG)
+
+static DEFINE_SPINLOCK(j1939_netdev_lock);
+
+static struct j1939_priv *j1939_priv_create(struct net_device *ndev)
 {
+	struct j1939_priv *priv;
+
+	priv = kzalloc(sizeof(*priv), GFP_KERNEL);
+	if (!priv)
+		return NULL;
+
+	rwlock_init(&priv->lock);
+	INIT_LIST_HEAD(&priv->ecus);
+	priv->ndev = ndev;
+	kref_init(&priv->kref);
+	dev_hold(ndev);
+
+	return priv;
+}
+
+static inline void j1939_priv_set(struct net_device *ndev, struct j1939_priv *priv)
+{
+	struct can_ml_priv *can_ml_priv = ndev->ml_priv;
+
+	can_ml_priv->j1939_priv = priv;
+}
+
+static void __j1939_priv_release(struct kref *kref)
+{
+	struct j1939_priv *priv = container_of(kref, struct j1939_priv, kref);
+	struct net_device *ndev = priv->ndev;
+	struct j1939_ecu *ecu, *tmp;
+
+	can_rx_unregister(dev_net(ndev), ndev, J1939_CAN_ID, J1939_CAN_MASK,
+			  j1939_can_recv, priv);
+
+	/* remove pending transport protocol sessions */
+	j1939_tp_rmdev_notifier(ndev);
+
+	/* cleanup priv */
+	write_lock_bh(&priv->lock);
+	list_for_each_entry_safe(ecu, tmp, &priv->ecus, list)
+		j1939_ecu_unregister_locked(ecu);
+	write_unlock_bh(&priv->lock);
+
+	/* unlink from netdev */
+	j1939_priv_set(ndev, NULL);
+
+	dev_put(ndev);
+	kfree(priv);
+}
+
+void j1939_priv_put(struct j1939_priv *priv)
+{
+	kref_put(&priv->kref, __j1939_priv_release);
+}
+
+int j1939_netdev_start(struct net *net, struct net_device *ndev)
+{
+	struct j1939_priv *priv;
 	int ret;
-	struct j1939_segment *jseg;
 
-	if (!netdev)
-		return -ENODEV;
-	if (netdev->type != ARPHRD_CAN)
-		return -EAFNOSUPPORT;
+	spin_lock(&j1939_netdev_lock);
+	priv = j1939_priv_get(ndev);
+	spin_unlock(&j1939_netdev_lock);
+	if (priv)
+		return 0;
 
-	ret = j1939_segment_register(netdev);
+	priv = j1939_priv_create(ndev);
+	if (!priv)
+		return -ENOMEM;
+
+	/* add CAN handler */
+	ret = can_rx_register(net, ndev, J1939_CAN_ID, J1939_CAN_MASK,
+			      j1939_can_recv, priv, "j1939", NULL);
 	if (ret < 0)
-		goto fail_register;
-	jseg = j1939_segment_find(netdev->ifindex);
-	ret = can_rx_register(netdev, J1939_CAN_ID, J1939_CAN_MASK,
-			j1939_can_recv, jseg, "j1939");
-	if (ret < 0)
-		goto fail_can_rx;
+		goto out_dev_put;
+
+	spin_lock(&j1939_netdev_lock);
+	if (j1939_priv_get(ndev)) {
+		/* Someone was faster than us, use their priv and roll
+		 * back our's.
+		 */
+		spin_unlock(&j1939_netdev_lock);
+		goto out_rx_unregister;
+	}
+	j1939_priv_set(ndev, priv);
+	spin_unlock(&j1939_netdev_lock);
+
 	return 0;
 
-fail_can_rx:
-	j1939_segment_unregister(jseg);
-	put_j1939_segment(jseg);
-fail_register:
+ out_rx_unregister:
+	can_rx_unregister(net, ndev, J1939_CAN_ID, J1939_CAN_MASK,
+			  j1939_can_recv, priv);
+ out_dev_put:
+	dev_put(ndev);
+	kfree(priv);
+
 	return ret;
 }
 
-int j1939_segment_detach(struct net_device *netdev)
+/* get pointer to priv without increasing ref counter */
+static inline struct j1939_priv *j1939_ndev_to_priv(struct net_device *ndev)
 {
-	struct j1939_segment *jseg;
+	struct can_ml_priv *can_ml_priv = ndev->ml_priv;
 
-	BUG_ON(!netdev);
-	jseg = j1939_segment_find(netdev->ifindex);
-	if (!jseg)
-		return -EHOSTDOWN;
-	can_rx_unregister(netdev, J1939_CAN_ID, J1939_CAN_MASK,
-			j1939_can_recv, jseg);
-	j1939_segment_unregister(jseg);
-	put_j1939_segment(jseg);
-	j1939sk_netdev_event(netdev->ifindex, EHOSTDOWN);
-	return 0;
+	return can_ml_priv->j1939_priv;
 }
 
-static int j1939_notifier(struct notifier_block *nb,
-			unsigned long msg, void *data)
+void j1939_netdev_stop(struct net_device *ndev)
 {
-	struct net_device *netdev = (struct net_device *)data;
-	struct j1939_segment *jseg;
+	struct j1939_priv *priv;
 
-	if (!net_eq(dev_net(netdev), &init_net))
+	spin_lock(&j1939_netdev_lock);
+	priv = j1939_ndev_to_priv(ndev);
+	j1939_priv_put(priv);
+	spin_unlock(&j1939_netdev_lock);
+}
+
+struct j1939_priv *j1939_priv_get(struct net_device *ndev)
+{
+	struct j1939_priv *priv;
+
+	if (ndev->type != ARPHRD_CAN)
+		return NULL;
+
+	priv = j1939_ndev_to_priv(ndev);
+	if (priv)
+		kref_get(&priv->kref);
+
+	return priv;
+}
+
+static struct j1939_priv *j1939_priv_get_by_index(struct net *net, int ifindex)
+{
+	struct j1939_priv *priv;
+	struct net_device *ndev;
+
+	ndev = dev_get_by_index(net, ifindex);
+	if (!ndev)
+		return NULL;
+
+	priv = j1939_priv_get(ndev);
+	dev_put(ndev);
+
+	return priv;
+}
+
+int j1939_send(struct net *net, struct sk_buff *skb)
+{
+	int ret, dlc;
+	canid_t canid;
+	struct j1939_sk_buff_cb *skcb = j1939_skb_to_cb(skb);
+	struct j1939_priv *priv;
+	struct can_frame *cf;
+
+	priv = j1939_priv_get_by_index(net, skb->dev->ifindex);
+	if (!priv) {
+		ret = -EINVAL;
+		goto failed;
+	}
+
+	if (skb->len > 8) {
+		/* re-route via transport protocol */
+		ret = j1939_tp_send(net, priv, skb);
+		j1939_priv_put(priv);
+		return ret;
+	}
+
+	/* apply sanity checks */
+	if (j1939_pgn_is_pdu1(skcb->addr.pgn))
+		skcb->addr.pgn &= 0x3ff00;
+	else
+		skcb->addr.pgn &= J1939_PGN_MAX;
+
+	if (skcb->priority > 7)
+		skcb->priority = 6;
+
+	ret = j1939_ac_fixup(priv, skb);
+	j1939_priv_put(priv);
+	if (unlikely(ret))
+		goto failed;
+	dlc = skb->len;
+	if (dlc > 8) {
+		ret = -EMSGSIZE;
+		goto failed;
+	}
+
+	/* re-claim the CAN_HDR from the SKB */
+	cf = skb_push(skb, J1939_CAN_HDR);
+
+	/* make it a full can frame again */
+	skb_put(skb, J1939_CAN_FTR + (8 - dlc));
+
+	canid = CAN_EFF_FLAG |
+		(skcb->addr.sa) |
+		((skcb->priority & 0x7) << 26);
+	if (j1939_pgn_is_pdu1(skcb->addr.pgn))
+		canid |= ((skcb->addr.pgn & 0x3ff00) << 8) |
+			(skcb->addr.da << 8);
+	else
+		canid |= ((skcb->addr.pgn & J1939_PGN_MAX) << 8);
+
+	cf->can_id = canid;
+	cf->can_dlc = dlc;
+
+	return can_send(skb, 1);
+ failed:
+	consume_skb(skb);
+	return ret;
+}
+
+static int j1939_netdev_notify(struct notifier_block *nb,
+			       unsigned long msg, void *data)
+{
+	struct net_device *ndev = netdev_notifier_info_to_dev(data);
+
+	if (!net_eq(dev_net(ndev), &init_net))
 		return NOTIFY_DONE;
 
-	if (netdev->type != ARPHRD_CAN)
+	if (ndev->type != ARPHRD_CAN)
 		return NOTIFY_DONE;
 
 	switch (msg) {
 	case NETDEV_UNREGISTER:
-		jseg = j1939_segment_find(netdev->ifindex);
-		if (!jseg)
-			break;
-		j1939_segment_unregister(jseg);
-		j1939sk_netdev_event(netdev->ifindex, ENODEV);
+		j1939_tp_rmdev_notifier(ndev);
+		j1939_sk_netdev_event(ndev, ENODEV);
 		break;
 
 	case NETDEV_DOWN:
-		j1939sk_netdev_event(netdev->ifindex, ENETDOWN);
+		j1939_sk_netdev_event(ndev, ENETDOWN);
 		break;
 	}
 
 	return NOTIFY_DONE;
 }
 
-/* MODULE interface */
+static struct notifier_block j1939_netdev_notifier = {
+	.notifier_call = j1939_netdev_notify,
+};
 
+/* MODULE interface */
 static __init int j1939_module_init(void)
 {
 	int ret;
 
 	pr_info("can: SAE J1939\n");
 
-	ret = j1939_proc_module_init();
-	if (ret < 0)
-		goto fail_proc;
+	ret = register_netdevice_notifier(&j1939_netdev_notifier);
+	if (ret)
+		goto fail_notifier;
 
-	s.notifier.notifier_call = j1939_notifier;
-	register_netdevice_notifier(&s.notifier);
-
-	ret = j1939bus_module_init();
-	if (ret < 0)
-		goto fail_bus;
-	ret = j1939sk_module_init();
-	if (ret < 0)
+	ret = can_proto_register(&j1939_can_proto);
+	if (ret < 0) {
+		pr_err("can: registration of j1939 protocol failed\n");
 		goto fail_sk;
-	ret = j1939tp_module_init();
+	}
+	ret = j1939_tp_module_init();
 	if (ret < 0)
 		goto fail_tp;
+
 	return 0;
 
-	j1939tp_module_exit();
-fail_tp:
-	j1939sk_module_exit();
-fail_sk:
-	j1939bus_module_exit();
-fail_bus:
-	unregister_netdevice_notifier(&s.notifier);
-
-	j1939_proc_module_exit();
-fail_proc:
+ fail_tp:
+	can_proto_unregister(&j1939_can_proto);
+ fail_sk:
+	unregister_netdevice_notifier(&j1939_netdev_notifier);
+ fail_notifier:
 	return ret;
 }
 
 static __exit void j1939_module_exit(void)
 {
-	j1939tp_module_exit();
-	j1939sk_module_exit();
-	j1939bus_module_exit();
+	j1939_tp_module_exit();
 
-	unregister_netdevice_notifier(&s.notifier);
+	can_proto_unregister(&j1939_can_proto);
 
-	j1939_proc_module_exit();
+	unregister_netdevice_notifier(&j1939_netdev_notifier);
 }
 
 module_init(j1939_module_init);
