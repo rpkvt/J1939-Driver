@@ -11,10 +11,10 @@ index 5b2505e..1166b40 100644
  
  enum {
 diff --git a/net/can/j1939/j1939-priv.h b/net/can/j1939/j1939-priv.h
-index 21faac4..6d0d8e7 100644
+index 758dc64..037ab3e 100644
 --- a/net/can/j1939/j1939-priv.h
 +++ b/net/can/j1939/j1939-priv.h
-@@ -131,6 +131,11 @@ struct j1939_sk_buff_cb {
+@@ -134,6 +134,11 @@ struct j1939_sk_buff_cb {
  	u32 src_flags;
  	u32 dst_flags;
  
@@ -22,11 +22,11 @@ index 21faac4..6d0d8e7 100644
 +	/*   Flags for modifying the transport protocol*/
 +	int tpflags;
 +
-+#define BAM_NODELAY 1 
++#define BAM_NODELAY 1
  	/* for tx, MSG_SYN will be used to sync on sockets */
  	u32 msg_flags;
  
-@@ -151,6 +156,22 @@ static inline struct j1939_sk_buff_cb *j1939_skb_to_cb(struct sk_buff *skb)
+@@ -154,6 +159,22 @@ static inline struct j1939_sk_buff_cb *j1939_skb_to_cb(struct sk_buff *skb)
  int j1939_send(struct net *net, struct sk_buff *skb);
  void j1939_sk_recv(struct sk_buff *skb);
  
