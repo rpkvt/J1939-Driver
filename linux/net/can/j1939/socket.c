@@ -823,12 +823,12 @@ static int j1939sk_sendmsg(struct kiocb *iocb, struct socket *sock,
 	skb_cb->priority = j1939_prio(jsk->sk.sk_priority);
 	skb_cb->src.addr = jsk->addr.sa;
 	skb_cb->dst.addr = jsk->addr.da;
-/*
+
 	//Check if delay has been disabled
-	tpmod.tpflags = (jsk->state & JSK_BAM_DELAY)?BAM_NODELAY:0;
-	printk("DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
-	printk("DEBUG: sk_cb->tpflags state: %d\n",tpmod.tpflags);
-*/
+	skb_cb->msg_flags |= (jsk->state & JSK_BAM_DELAY)?BAM_NODELAY:0;
+	//printk("DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
+	//printk("DEBUG: sk_cb->msg_flags & BAM_NODELAY state: %d\n",skb_cb->msg_flags & BAM_NODELAY);
+
 
 	if (msg->msg_name) {
 		struct sockaddr_can *addr = msg->msg_name;

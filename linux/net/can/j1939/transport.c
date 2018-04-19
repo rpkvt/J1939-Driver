@@ -950,27 +950,27 @@ static int j1939tp_txnext(struct session *session)
 		if (tp_cmd_bam == dat[0])
 		{
 			//Remove delay entirely
-			j1939tp_schedule_txtimer(session, 0);
+			//j1939tp_schedule_txtimer(session, 0);
 
-			/*
-			printk("DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
-			printk("DEBUG: Calling j1939tp_schedule_txtimer\n");
+
+			//printk("DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
+			//printk("DEBUG: Calling j1939tp_schedule_txtimer\n");
 			//Use  50 ms delay
-			if(j1939cb_use_bamdelay(&tpmod))
+			if(j1939cb_use_bamdelay(session->cb))
 			{
-				printk("DEBUG: Using 50 ms delay\n");
+				//printk("DEBUG: Using 50 ms delay\n");
 				j1939tp_schedule_txtimer(session, 50);
 			}
 			//Don't use bam delay
 			else
 			{
-				printk("DEBUG: Using 0 ms delay\n");
+				//printk("DEBUG: Using 0 ms delay\n");
 
 				//Start transmit immediately.
 				//TODO: Take in delay value through socket.
-				j1939tp_schedule_txtimer(session, 0);
+				j1939tp_schedule_txtimer(session, 1);
 			}
-			*/
+
 		}
 		j1939tp_set_rxtimeout(session, 1250);
 		break;
@@ -1098,11 +1098,11 @@ tx_cts:
 				if (session->pkt.tx < session->pkt.total)
 				{
 					//Remove delay entirely
-					j1939tp_schedule_txtimer(session, 0);
+					//j1939tp_schedule_txtimer(session, 0);
 
-					/*
+
 					//Use the normal BAM delay?
-					if(j1939cb_use_bamdelay(&tpmod))
+					if(j1939cb_use_bamdelay(session->cb))
 					{
 						//Send packet after 50 ms
 						j1939tp_schedule_txtimer(session, 50);
@@ -1111,9 +1111,9 @@ tx_cts:
 					{
 						//Send packet immediately.
 						//TODO: Take in delay value through socket.
-						j1939tp_schedule_txtimer(session, 0);
+						j1939tp_schedule_txtimer(session, 1);
 					}
-					*/
+
 				}
 				break;
 			}
