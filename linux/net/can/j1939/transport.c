@@ -726,7 +726,7 @@ static void j1939_xtp_rx_rts(struct net *net, struct sk_buff *skb, bool extd)
 
 /* Goes into here!!!!!  This is where it kills the session*/
 
-			//j1939_session_cancel(net, session, J1939_ABORT_BUSY);
+			j1939_session_cancel(net, session, J1939_ABORT_BUSY);
 			j1939_session_put(session);
 			return;
 		}
@@ -1258,6 +1258,7 @@ int j1939_tp_recv(struct net *net, struct sk_buff *skb)
 		j1939_xtp_rx_dat(net, skb, J1939_EXTENDED);
 		break;
 	case J1939_ETP_PGN_CTL:
+		pr_alert("Debugging - Function: %s case J1939_ETP_PGN_CTL \n",__func__);
 		if (skb->len < 8) {
 			j1939_xtp_rx_bad_message(net, skb, J1939_EXTENDED);
 			break;
@@ -1288,6 +1289,7 @@ int j1939_tp_recv(struct net *net, struct sk_buff *skb)
 		j1939_xtp_rx_dat(net, skb, J1939_REGULAR);
 		break;
 	case J1939_TP_PGN_CTL:
+		pr_alert("Debugging - Function: %s case J1939_TP_PGN_CTL \n",__func__);
 		if (skb->len < 8) {
 			j1939_xtp_rx_bad_message(net, skb, J1939_REGULAR);
 			break;
