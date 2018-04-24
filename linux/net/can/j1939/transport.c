@@ -500,8 +500,10 @@ static inline void j1939_session_completed(struct net *net, struct j1939_session
 
 static void j1939_session_cancel(struct net *net, struct j1939_session *session, int err)
 {
-	if (err >= 0 && j1939_tp_im_involved_anydir(session->skb)) {
-		if (!j1939_cb_is_broadcast(session->skcb)) {
+	if (err >= 0 && j1939_tp_im_involved_anydir(session->skb))
+	{
+		if (!j1939_cb_is_broadcast(session->skcb))
+		{
 			/* do not send aborts on incoming broadcasts */
 			j1939_xtp_tx_abort(session->skb, session->extd,
 					   !(session->skcb->src_flags & J1939_ECU_LOCAL),
@@ -681,49 +683,57 @@ static void j1939_xtp_rx_rts(struct net *net, struct sk_buff *skb, bool extd)
 	const u8 *dat;
 	pgn_t pgn;
 
-	pr_alert("Debugging - Function: %s Line: %s\n", __func__, __LINE__);
-
 	dat = skb->data;
 	pgn = j1939_xtp_ctl_to_pgn(dat);
 
-	if (dat[0] == J1939_TP_CMD_RTS && j1939_cb_is_broadcast(skcb)) {
-		pr_alert("%s: rts without destination (%i %02x)\n", __func__,
-			 skb->skb_iif, skcb->addr.sa);
-		return;
-	}
+	pr_alert("Debugging - Function: %s Number: 1 \n",__func__);
 
-	/* TODO: abort RTS when a similar
-	 * TP is pending in the other direction
-	 */
-	session = j1939_session_get_by_skb(net, j1939_sessionq(net, extd), skb, false);
-	if (session && !j1939_tp_im_transmitter(skb))
-	{
-		pr_alert("Debugging - Function: %s Line: %s\n", __func__, __LINE__);
-		/* RTS on pending connection */
-		j1939_session_cancel(net, session, J1939_ABORT_BUSY);
-		if (pgn != session->skcb->addr.pgn && dat[0] != J1939_TP_CMD_BAM)
-			j1939_xtp_tx_abort(skb, extd, 1, J1939_ABORT_BUSY, pgn);
-		j1939_session_put(session);
-		return;
-	}
-	else if (!session && j1939_tp_im_transmitter(skb))
-	{
-		pr_alert("%s: I should tx (%i %02x %02x)\n", __func__,
-			 skb->skb_iif, skcb->addr.sa, skcb->addr.da);
-		return;
-	}
-	if (session && session->last_cmd != 0)
-	{
-		/* we received a second rts on the same connection */
-		pr_alert("%s: connection exists (%i %02x %02x)\n", __func__,
-			 skb->skb_iif, skcb->addr.sa, skcb->addr.da);
-		j1939_session_cancel(net, session, J1939_ABORT_BUSY);
-		j1939_session_put(session);
-		return;
-	}
+		if (dat[0] == J1939_TP_CMD_RTS && j1939_cb_is_broadcast(skcb)) {
+			pr_alert("%s: rts without destination (%i %02x)\n", __func__,
+				 skb->skb_iif, skcb->addr.sa);
+			return;
+		}
+
+		/* TODO: abort RTS when a similar
+		 * TP is pending in the other direction
+		 */
+		session = j1939_session_get_by_skb(net, j1939_sessionq(net, extd), skb, false);
+		if (session && !j1939_tp_im_transmitter(skb))
+		{
+
+			/* RTS on pending connection */
+			j1939_session_cancel(net, session, J1939_ABORT_BUSY);
+			if (pgn != session->skcb->addr.pgn && dat[0] != J1939_TP_CMD_BAM)
+			{
+				j1939_xtp_tx_abort(skb, extd, 1, J1939_ABORT_BUSY, pgn);
+			}
+			j1939_session_put(session);
+			return;
+		}
+		else if (!session && j1939_tp_im_transmitter(skb))
+		{
+			pr_alert("%s: I should tx (%i %02x %02x)\n", __func__,
+				 skb->skb_iif, skcb->addr.sa, skcb->addr.da);
+			return;
+		}
+
+	pr_alert("Debugging - Function: %s Number: 4 \n",__func__);
+
+		if (session && session->last_cmd != 0)
+		{
+			/* we received a second rts on the same connection */
+			pr_alert("%s: connection exists (%i %02x %02x)\n", __func__,skb->skb_iif, skcb->addr.sa, skcb->addr.da);
+
+/* Goes into here!!!!!  This is where it kills the session*/
+
+			//j1939_session_cancel(net, session, J1939_ABORT_BUSY);
+			j1939_session_put(session);
+			return;
+		}
+
 	if (session)
 	{
-		pr_alert("Debugging - Function: %s Line: %s\n", __func__, __LINE__);
+		pr_alert("Debugging - Function: %s Number: 6 \n",__func__);
 		/* make sure 'sa' & 'da' are correct !
 		 * They may be 'not filled in yet' for sending
 		 * skb's, since they did not pass the Address Claim ever.
@@ -731,73 +741,93 @@ static void j1939_xtp_rx_rts(struct net *net, struct sk_buff *skb, bool extd)
 		session->skcb->addr.sa = skcb->addr.sa;
 		session->skcb->addr.da = skcb->addr.da;
 	}
-	else
-	{
-		pr_alert("Debugging - Function: %s Line: %s\n", __func__, __LINE__);
-		int abort = 0;
+		else
+		{
+			int abort = 0;
 
-		if (extd) {
-			len = j1939_etp_ctl_to_size(dat);
-			if (len > J1939_MAX_ETP_PACKET_SIZE)
-				abort = J1939_ABORT_FAULT;
-			else if (j1939_tp_max_packet_size && (len > j1939_tp_max_packet_size))
-				abort = J1939_ABORT_RESOURCE;
-			else if (len <= J1939_MAX_TP_PACKET_SIZE)
-				abort = J1939_ABORT_FAULT;
-		} else {
-			len = j1939_tp_ctl_to_size(dat);
-			if (len > J1939_MAX_TP_PACKET_SIZE)
-				abort = J1939_ABORT_FAULT;
-			else if (j1939_tp_max_packet_size && (len > j1939_tp_max_packet_size))
-				abort = J1939_ABORT_RESOURCE;
-		}
-		if (abort) {
-			j1939_xtp_tx_abort(skb, extd, 1, abort, pgn);
-			return;
-		}
-		session = j1939_session_fresh_new(len, skb, pgn);
-		if (!session) {
-			j1939_xtp_tx_abort(skb, extd, 1, J1939_ABORT_RESOURCE,
-					   pgn);
-			return;
-		}
-		session->extd = extd;
+			if (extd)
+			{
+				len = j1939_etp_ctl_to_size(dat);
+				if (len > J1939_MAX_ETP_PACKET_SIZE)
+				{
+					abort = J1939_ABORT_FAULT;
+				}
+				else if (j1939_tp_max_packet_size && (len > j1939_tp_max_packet_size))
+				{
+					abort = J1939_ABORT_RESOURCE;
+				}
+				else if (len <= J1939_MAX_TP_PACKET_SIZE)
+				{
+					abort = J1939_ABORT_FAULT;
+				}
+			}
+			else
+			{
+				len = j1939_tp_ctl_to_size(dat);
+				if (len > J1939_MAX_TP_PACKET_SIZE)
+				{
+					abort = J1939_ABORT_FAULT;
+				}
+				else if (j1939_tp_max_packet_size && (len > j1939_tp_max_packet_size))
+				{
+					abort = J1939_ABORT_RESOURCE;
+				}
+			}
+			if (abort)
+			{
+				j1939_xtp_tx_abort(skb, extd, 1, abort, pgn);
+				return;
+			}
+			session = j1939_session_fresh_new(len, skb, pgn);
+			if (!session)
+			{
+				j1939_xtp_tx_abort(skb, extd, 1, J1939_ABORT_RESOURCE,
+						   pgn);
+				return;
+			}
 
-		/* initialize the control buffer: plain copy */
-		session->pkt.total = (len + 6) / 7;
-		session->pkt.block = 0xff;
-		if (!extd) {
-			if (dat[3] != session->pkt.total)
-				pr_alert("%s: strange total, %u != %u\n",
-					 __func__, session->pkt.total,
-					 dat[3]);
-			session->pkt.total = dat[3];
-			session->pkt.block = min(dat[3], dat[4]);
+			session->extd = extd;
+
+			/* initialize the control buffer: plain copy */
+			session->pkt.total = (len + 6) / 7;
+			session->pkt.block = 0xff;
+			if (!extd)
+			{
+				if (dat[3] != session->pkt.total)
+					pr_alert("%s: strange total, %u != %u\n",
+						 __func__, session->pkt.total,
+						 dat[3]);
+				session->pkt.total = dat[3];
+				session->pkt.block = min(dat[3], dat[4]);
+			}
+			session->pkt.done = 0;
+			session->pkt.tx = 0;
+			j1939_session_get(session); /* equivalent to j1939_tp_find() */
+			j1939_sessionlist_lock(net);
+			list_add_tail(&session->list, j1939_sessionq(net, extd));
+			j1939_sessionlist_unlock(net);
 		}
-		session->pkt.done = 0;
-		session->pkt.tx = 0;
-		j1939_session_get(session); /* equivalent to j1939_tp_find() */
-		j1939_sessionlist_lock(net);
-		list_add_tail(&session->list, j1939_sessionq(net, extd));
-		j1939_sessionlist_unlock(net);
-	}
+
+	pr_alert("Debugging - Function: %s Number: 20 \n",__func__);
 	session->last_cmd = dat[0];
 
 	j1939_tp_set_rxtimeout(session, 1250);
 
-	if (j1939_tp_im_receiver(session->skb))
-	{
-		pr_alert("Debugging - Function: %s Line: %s\n", __func__, __LINE__);
-		if (extd || dat[0] != J1939_TP_CMD_BAM)
-			j1939_session_schedule_txnow(session);
-	}
+		if (j1939_tp_im_receiver(session->skb))
+		{
+			if (extd || dat[0] != J1939_TP_CMD_BAM)
+			{
+				j1939_session_schedule_txnow(session);
+			}
+		}
 
-	pr_alert("Debugging - Function: %s Line: %s\n", __func__, __LINE__);
+	pr_alert("Debugging - Function: %s Number: 23 \n",__func__);
 	/* as soon as it's inserted, things can go fast
 	 * protect against a long delay
 	 * between spin_unlock & next statement
 	 * so, only release here, at the end
 	 */
+	/* Experiencing a timeout here after aborting earlier...*/
 	j1939_session_put(session);
 }
 
