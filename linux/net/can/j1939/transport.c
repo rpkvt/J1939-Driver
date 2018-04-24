@@ -727,6 +727,9 @@ static void j1939_xtp_rx_rts(struct net *net, struct sk_buff *skb, bool extd)
 /* Goes into here!!!!!  This is where it kills the session*/
 
 			j1939_session_cancel(net, session, J1939_ABORT_BUSY);
+
+			j1939_tp_set_rxtimeout(session, 1250); //Adding this to see if it fixes the timeout issue
+
 			j1939_session_put(session);
 			return;
 		}
@@ -1253,13 +1256,15 @@ int j1939_tp_recv(struct net *net, struct sk_buff *skb)
 	struct j1939_sk_buff_cb *skcb = j1939_skb_to_cb(skb);
 	const u8 *dat;
 
-	switch (skcb->addr.pgn) {
+	switch (skcb->addr.pgn)
+	{
 	case J1939_ETP_PGN_DAT:
 		j1939_xtp_rx_dat(net, skb, J1939_EXTENDED);
 		break;
 	case J1939_ETP_PGN_CTL:
 		pr_alert("Debugging - Function: %s case J1939_ETP_PGN_CTL \n",__func__);
-		if (skb->len < 8) {
+		if (skb->len < 8)
+		{
 			j1939_xtp_rx_bad_message(net, skb, J1939_EXTENDED);
 			break;
 		}

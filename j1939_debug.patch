@@ -1,5 +1,5 @@
 diff --git a/net/can/j1939/transport.c b/net/can/j1939/transport.c
-index 58850da..e3a496d 100644
+index 58850da..fa55c59 100644
 --- a/net/can/j1939/transport.c
 +++ b/net/can/j1939/transport.c
 @@ -500,8 +500,10 @@ static inline void j1939_session_completed(struct net *net, struct j1939_session
@@ -15,7 +15,7 @@ index 58850da..e3a496d 100644
  			/* do not send aborts on incoming broadcasts */
  			j1939_xtp_tx_abort(session->skb, session->extd,
  					   !(session->skcb->src_flags & J1939_ECU_LOCAL),
-@@ -684,105 +686,148 @@ static void j1939_xtp_rx_rts(struct net *net, struct sk_buff *skb, bool extd)
+@@ -684,105 +686,151 @@ static void j1939_xtp_rx_rts(struct net *net, struct sk_buff *skb, bool extd)
  	dat = skb->data;
  	pgn = j1939_xtp_ctl_to_pgn(dat);
  
@@ -131,6 +131,9 @@ index 58850da..e3a496d 100644
 +/* Goes into here!!!!!  This is where it kills the session*/
 +
 +			j1939_session_cancel(net, session, J1939_ABORT_BUSY);
++
++			j1939_tp_set_rxtimeout(session, 1250); //Adding this to see if it fixes the timeout issue
++
 +			j1939_session_put(session);
 +			return;
  		}
@@ -245,15 +248,25 @@ index 58850da..e3a496d 100644
  	j1939_session_put(session);
  }
  
-@@ -1213,6 +1258,7 @@ int j1939_tp_recv(struct net *net, struct sk_buff *skb)
+@@ -1208,12 +1256,15 @@ int j1939_tp_recv(struct net *net, struct sk_buff *skb)
+ 	struct j1939_sk_buff_cb *skcb = j1939_skb_to_cb(skb);
+ 	const u8 *dat;
+ 
+-	switch (skcb->addr.pgn) {
++	switch (skcb->addr.pgn)
++	{
+ 	case J1939_ETP_PGN_DAT:
  		j1939_xtp_rx_dat(net, skb, J1939_EXTENDED);
  		break;
  	case J1939_ETP_PGN_CTL:
+-		if (skb->len < 8) {
 +		pr_alert("Debugging - Function: %s case J1939_ETP_PGN_CTL \n",__func__);
- 		if (skb->len < 8) {
++		if (skb->len < 8)
++		{
  			j1939_xtp_rx_bad_message(net, skb, J1939_EXTENDED);
  			break;
-@@ -1243,6 +1289,7 @@ int j1939_tp_recv(struct net *net, struct sk_buff *skb)
+ 		}
+@@ -1243,6 +1294,7 @@ int j1939_tp_recv(struct net *net, struct sk_buff *skb)
  		j1939_xtp_rx_dat(net, skb, J1939_REGULAR);
  		break;
  	case J1939_TP_PGN_CTL:
