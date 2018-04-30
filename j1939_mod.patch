@@ -3065,10 +3065,10 @@ index 0000000..f2dbc4e
 +};
 diff --git a/net/can/j1939/transport.c b/net/can/j1939/transport.c
 new file mode 100644
-index 0000000..e093603
+index 0000000..a990c6e
 --- /dev/null
 +++ b/net/can/j1939/transport.c
-@@ -0,0 +1,1539 @@
+@@ -0,0 +1,1538 @@
 +/*
 + * Copyright (c) 2010-2011 EIA Electronics
 + *
@@ -4056,8 +4056,7 @@ index 0000000..e093603
 +			if(j1939cb_use_bamdelay(session->cb))
 +			{
 +				//printk("DEBUG: Using 50 ms delay\n");
-+
-+				j1939_tp_schedule_txtimer(session, 50);
++				j1939tp_schedule_txtimer(session, 50);
 +			}
 +			//Don't use bam delay
 +			else
@@ -4065,7 +4064,7 @@ index 0000000..e093603
 +				//printk("DEBUG: Using 1 ms delay\n");
 +
 +				//Use 1 ms delay instead
-+				j1939_tp_schedule_txtimer(session, 1);
++				j1939tp_schedule_txtimer(session, 1);
 +			}
 +		}
 +

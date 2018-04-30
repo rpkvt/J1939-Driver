@@ -985,8 +985,7 @@ static int j1939tp_txnext(struct session *session)
 			if(j1939cb_use_bamdelay(session->cb))
 			{
 				//printk("DEBUG: Using 50 ms delay\n");
-
-				j1939_tp_schedule_txtimer(session, 50);
+				j1939tp_schedule_txtimer(session, 50);
 			}
 			//Don't use bam delay
 			else
@@ -994,7 +993,7 @@ static int j1939tp_txnext(struct session *session)
 				//printk("DEBUG: Using 1 ms delay\n");
 
 				//Use 1 ms delay instead
-				j1939_tp_schedule_txtimer(session, 1);
+				j1939tp_schedule_txtimer(session, 1);
 			}
 		}
 
