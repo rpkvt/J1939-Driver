@@ -1413,10 +1413,10 @@ index 0000000..a4d5877
 +}
 diff --git a/net/can/j1939/j1939-priv.h b/net/can/j1939/j1939-priv.h
 new file mode 100644
-index 0000000..f93088e
+index 0000000..1188589
 --- /dev/null
 +++ b/net/can/j1939/j1939-priv.h
-@@ -0,0 +1,335 @@
+@@ -0,0 +1,333 @@
 +/*
 + * j1939-priv.h
 + *
@@ -1639,12 +1639,11 @@ index 0000000..f93088e
 +	int srcflags;
 +	int dstflags;
 +
++#define BAM_NODELAY 1
 +#define ECU_LOCAL 1
 +
-+	/* Flags for modifying the transport protocol*/
++	/*   Flags for modifying the transport protocol*/
 +	int tpflags;
-+
-+#define BAM_NODELAY 1
 +
 +	/* for tx, MSG_SYN will be used to sync on sockets */
 +	int msg_flags;
@@ -1658,6 +1657,11 @@ index 0000000..f93088e
 +
 +#define J1939_MSG_RESERVED MSG_SYN
 +#define J1939_MSG_SYNC MSG_SYN
++
++static inline int j1939cb_is_broadcast(const struct j1939_sk_buff_cb *skcb)
++{
++	return (!skcb->dstname && (skcb->dstaddr == 0xff));
++}
 +
 +//Check if we want to disable the normal BAM 50 ms delay
 +//Return 0 if we want to disable the delay
@@ -1673,12 +1677,6 @@ index 0000000..f93088e
 +	}
 +
 +	return 1;
-+}
-+
-+
-+static inline int j1939cb_is_broadcast(const struct j1939_sk_buff_cb *skcb)
-+{
-+	return (!skcb->dstname && (skcb->dstaddr == 0xff));
 +}
 +
 +int j1939_send(struct sk_buff *);
@@ -1754,10 +1752,10 @@ index 0000000..f93088e
 +#endif /* _J1939_PRIV_H_ */
 diff --git a/net/can/j1939/main.c b/net/can/j1939/main.c
 new file mode 100644
-index 0000000..8a02edb
+index 0000000..3f4b018
 --- /dev/null
 +++ b/net/can/j1939/main.c
-@@ -0,0 +1,476 @@
+@@ -0,0 +1,474 @@
 +/*
 + * Copyright (c) 2010-2011 EIA Electronics
 + *
@@ -1889,10 +1887,8 @@ index 0000000..8a02edb
 +	struct can_frame *cf;
 +
 +	if (skb->len > 8)
-+	{
 +		/* re-route via transport protocol */
 +		return j1939_send_transport(skb);
-+	}
 +
 +	/* apply sanity checks */
 +	skcb->pgn &= (pgn_is_pdu1(skcb->pgn)) ? 0x3ff00 : 0x3ffff;
@@ -3069,10 +3065,10 @@ index 0000000..f2dbc4e
 +};
 diff --git a/net/can/j1939/transport.c b/net/can/j1939/transport.c
 new file mode 100644
-index 0000000..fd25ded
+index 0000000..e093603
 --- /dev/null
 +++ b/net/can/j1939/transport.c
-@@ -0,0 +1,1538 @@
+@@ -0,0 +1,1539 @@
 +/*
 + * Copyright (c) 2010-2011 EIA Electronics
 + *
@@ -4049,6 +4045,8 @@ index 0000000..fd25ded
 +		if (ret < 0)
 +			goto failed;
 +		session->last_txcmd = dat[0];
++
++
 +		/* must lock? */
 +		if (tp_cmd_bam == dat[0])
 +		{
@@ -4059,7 +4057,7 @@ index 0000000..fd25ded
 +			{
 +				//printk("DEBUG: Using 50 ms delay\n");
 +
-+				j1939tp_schedule_txtimer(session, 50);
++				j1939_tp_schedule_txtimer(session, 50);
 +			}
 +			//Don't use bam delay
 +			else
@@ -4067,9 +4065,10 @@ index 0000000..fd25ded
 +				//printk("DEBUG: Using 1 ms delay\n");
 +
 +				//Use 1 ms delay instead
-+				j1939tp_schedule_txtimer(session, 1);
++				j1939_tp_schedule_txtimer(session, 1);
 +			}
 +		}
++
 +		j1939tp_set_rxtimeout(session, 1250);
 +		break;
 +	case tp_cmd_rts:
@@ -4190,11 +4189,9 @@ index 0000000..fd25ded
 +			else
 +			{
 +				pdelay = packet_delay;
-+				//pdelay = 1;
 +			}
-+
-+			printk("DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
-+			printk("DEBUG: pdelay: %d\n",pdelay);
++			//printk("DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
++			//printk("DEBUG: pdelay: %d\n",pdelay);
 +
 +			if ((session->pkt.tx < session->pkt.total) && pdelay) {
 +				j1939tp_schedule_txtimer(session, pdelay);
